@@ -1,0 +1,66 @@
+{
+  "results": {
+    "path_in": {
+      "clusters": ["../../sbayes_results/2023-05-31_11-39/K2/clusters_K2_0.txt",
+                   "../../sbayes_results/2023-05-31_11-39/K3/clusters_K3_0.txt",
+                   "../../sbayes_results/2023-05-31_11-39/K4/clusters_K4_0.txt"],
+      "stats": ["../../sbayes_results/2023-05-31_11-39/K2/stats_K2_0.txt",
+                "../../sbayes_results/2023-05-31_11-39/K3/stats_K3_0.txt",
+                "../../sbayes_results/2023-05-31_11-39/K4/stats_K4_0.txt"]
+    },
+    "path_out": "../../sbayes_plots"
+  },
+
+  
+  "data": {
+    "features": "../../preprocessed_data/ancient_family.csv",
+    "feature_states": "../../preprocessed_data/feature_states.csv"
+  },
+
+
+  "weight_plot": {
+    "content": {
+      "features": [],
+      "burn_in": 0.2
+    },
+    "legend": {
+      "title": {
+        "add": true,
+        "position": [0.5, -0.1],
+        "font_size": 20
+      },
+      "labels": {
+        "add": true,
+        "names": ["U", "C", "I"],
+        "font_size": 12
+      }
+    },
+    "output": {
+      "width_subplot": 4,
+      "height_subplot": 4,
+      "format": "pdf",
+      "resolution": 400,
+      "n_columns": 5
+    }
+  },
+
+  
+  "preference_plot": {
+    "content": {
+      "features": [],
+      "preference": [],
+      "burn_in": 0.2
+    },
+    "graphic": {
+      "labels": true,
+      "title": true
+    },
+    "output": {
+      "width_subplot": 4,
+      "height_subplot": 4,
+      "format": "pdf",
+      "resolution": 400,
+      "n_columns": 3
+    }
+  }
+}

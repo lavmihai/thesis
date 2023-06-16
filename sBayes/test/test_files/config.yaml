@@ -1,0 +1,52 @@
+mcmc:
+    steps: 600_000
+    samples: 20_000
+    runs: 1
+    grow_to_adjacent: 0.85
+    operators:
+        clusters: 40
+        weights: 10
+        cluster_effect: 0
+        confounding_effects: 0
+        source: 10
+    init_objects_per_cluster: 1
+    warmup:
+        warmup_steps: 50
+        warmup_chains: 2
+    sample_from_prior: false
+model:
+    clusters: 1
+    sample_source: true
+    confounders:
+        - universal
+        - family
+    prior:
+        objects_per_cluster:
+            type: uniform_area
+            min: 1
+            max: 100
+        geo:
+            type: uniform
+        weights:
+            type: uniform
+        cluster_effect:
+            type: uniform
+        confounding_effects:
+            universal:
+                "<ALL>":
+                    type: uniform
+            family:
+                fam1:
+                    type: dirichlet
+                    parameters:
+                        F1:
+                            A: 8.0
+                            B: 2.0
+                        F2:
+                            "True": 2.0
+                            "False": 3.0
+                fam2:
+                    type: uniform
+data:
+    features: features.csv
+    feature_states: feature_states_expected.csv

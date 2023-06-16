@@ -1,0 +1,63 @@
+Rec.P                Y: 89.47% | nan: 10.53% | 
+RecRef.I             N: 73.68% | Y: 15.79% | nan: 10.53% | 
+RecRef.D             N: 39.47% | Y:  50.0% | nan: 10.53% | 
+ContQInitial         N: 21.05% | Y: 76.32% | nan:  2.63% | 
+ContQNonInitial      N: 73.68% | Y: 23.68% | nan:  2.63% | 
+NumNoun              Y: 100.0% | 
+NounNum              N: 94.74% | Y:  5.26% | 
+DegWAdj              N:  2.63% | Y: 92.11% | nan:  5.26% | 
+AdjDegW              N: 89.47% | Y:  5.26% | nan:  5.26% | 
+GenN                 N: 47.37% | Y: 52.63% | 
+NGen                 N:  50.0% | Y:  50.0% | 
+AdjN                 N: 36.84% | Y: 63.16% | 
+NAdj                 N: 60.53% | Y: 39.47% | 
+PossAff.P            N: 31.58% | Y: 68.42% | 
+PossPre              N: 21.05% | Y: 10.53% | nan: 68.42% | 
+PossSuff             N: 10.53% | Y: 21.05% | nan: 68.42% | 
+ComInst              Differentiation: 28.95% | Identity: 63.16% | Mixed:  7.89% | 
+NPconj               And different from with: 97.37% | nan:  2.63% | 
+NVconj               Identity: 100.0% | 
+DefArt               Definite affix: 18.42% | Definite word distinct from demonstrative: 47.37% | Demonstrative word used as definite article:  5.26% | No definite but indefinite article:  7.89% | No definite or indefinite article: 18.42% | nan:  2.63% | 
+IndefArt             Indefinite word distinct from one: 15.79% | Indefinite word same as one:  50.0% | No definite or indefinite article: 18.42% | No indefinite but definite article: 13.16% | nan:  2.63% | 
+PronomS              Mixed:  7.89% | Obligatory pronouns in subject position: 39.47% | Optional pronouns in subject position: 15.79% | Subject affixes on verb: 31.58% | Subject pronouns in different position:  2.63% | nan:  2.63% | 
+IndefPron            Genericnounbased:  5.26% | Interrogativebased: 31.58% | Mixed indefinites: 57.89% | Special:  5.26% | 
+PronDem              Related by gender markers:  2.63% | Related for all demonstratives: 13.16% | Related for nonhuman reference:  2.63% | Related to nonremote demonstratives: 10.53% | Related to remote demonstratives: 23.68% | Unrelated: 44.74% | nan:  2.63% | 
+DemDis               No distance contrast:  2.63% | Threeway contrast: 28.95% | Twoway contrast: 68.42% | 
+PronAdnDem           Different inflection: 13.16% | Different stem:  2.63% | Identical: 84.21% | 
+IntRef               Differentiated: 57.89% | Identical: 23.68% | nan: 18.42% | 
+GenPron              3rd person only but also nonsingular: 71.05% | In 3rd person  1st andor 2nd person:  7.89% | No gender distinctions: 21.05% | 
+Gender               No gender: 21.05% | Semantic: 10.53% | Semantic and formal: 68.42% | 
+Gender.n             Five or more:  2.63% | Three: 31.58% | Two: 44.74% | nan: 21.05% | 
+NegMorph             Double negation:  2.63% | Negative affix: 21.05% | Negative auxiliary verb:  2.63% | Negative particle: 73.68% | 
+NPlural              Mixed morphological plural:  2.63% | Plural clitic:  2.63% | Plural stem change:  7.89% | Plural suffix: 84.21% | nan:  2.63% | 
+OrdNum               First second threeth: 63.16% | First twoth threeth: 26.32% | Firstoneth twoth threeth:  5.26% | Oneth twoth threeth:  2.63% | nan:  2.63% | 
+DistNum              Marked by following word: 21.05% | Marked by mixed or other strategies: 10.53% | Marked by preceding word: 13.16% | Marked by reduplication: 18.42% | Marked by suffix:  7.89% | No distributive numerals: 13.16% | nan: 15.79% | 
+AdpN                 Postpositions: 21.05% | Prepositions: 78.95% | 
+DemN                 DemonstrativeNoun: 81.58% | Mixed:  2.63% | NounDemonstrative: 15.79% | 
+NegV                 NegV: 73.68% | OptDoubleNeg:  5.26% | Type 3  Type 4:  2.63% | VNeg: 18.42% | 
+OXV                  No dominant order:  7.89% | VOX: 60.53% | VXO:  2.63% | XOV: 10.53% | XVO:  2.63% | nan: 15.79% | 
+RelN                 Mixed:  2.63% | NounRelative clause: 81.58% | Relative clauseNoun: 15.79% | 
+Passive              Absent: 13.16% | Present: 86.84% | 
+Optative             Inflectional optative absent: 89.47% | Inflectional optative present: 10.53% | 
+Prohibitive          Normal imperative  normal negative: 44.74% | Normal imperative  special negative: 15.79% | Special imperative  normal negative:  5.26% | Special imperative  special negative: 28.95% | nan:  5.26% | 
+Imperative           No secondperson imperatives: 21.05% | Second person numberneutral:  7.89% | Second plural:  2.63% | Second singular: 21.05% | Second singular and second plural: 47.37% | 
+AdpPM                No person marking: 76.32% | Pronouns and nouns:  2.63% | Pronouns only: 21.05% | 
+PolarQ               Final:  2.63% | Initial: 31.58% | No question particle:  50.0% | Other position: 10.53% | Second position:  2.63% | nan:  2.63% | 
+PossClass            No possessive classification: 97.37% | nan:  2.63% | 
+PossLocus            Dependent marking: 73.68% | Double marking:  5.26% | Head marking: 10.53% | No marking:  7.89% | nan:  2.63% | 
+Reduplication        Full reduplication only:  2.63% | No productive reduplication: 68.42% | Productive full and partial reduplication: 28.95% | 
+Future               Inflectional future exists: 39.47% | No inflectional future: 57.89% | nan:  2.63% | 
+Past                 No past tense:  2.63% | Present 23 remoteness distinctions:  5.26% | Present no remoteness distinctions: 89.47% | nan:  2.63% | 
+Aspect               Grammatical marking: 68.42% | No grammatical marking: 28.95% | nan:  2.63% | 
+Vper                 Both the A and P arguments: 13.16% | No person marking:  7.89% | Only the A argument: 78.95% | 
+SOV                  No dominant order:  7.89% | SOV: 18.42% | SVO: 68.42% | VSO:  5.26% | 
+Agr.Number           N: 10.53% | Y: 71.05% | nan: 18.42% | 
+Agr.Gender           N: 13.16% | Y: 68.42% | nan: 18.42% | 
+Agr.Case             N: 55.26% | Y: 26.32% | nan: 18.42% | 
+Agr.State            N: 81.58% | nan: 18.42% | 
+Agr.none             N: 81.58% | nan: 18.42% | 
+Agr.Role             N: 81.58% | nan: 18.42% | 
+NPHeadlessness       OK: 65.79% | nan: 34.21% | 
+ClausePosition       fixedpremain:  2.63% | flexibleadjacent: 36.84% | nan: 60.53% | 
+NumClass.n           0.0: 94.74% | nan:  5.26% | 
+Alignment            Mixed:  2.63% | SvAtrvP: 15.79% | SvAtrxP: 73.68% | SvPxAtr:  2.63% | nan:  5.26% | 

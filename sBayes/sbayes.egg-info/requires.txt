@@ -1,0 +1,13 @@
+Shapely
+descartes
+fastcluster
+geopandas
+matplotlib
+numpy
+pandas
+pycldf
+pyproj
+scipy
+seaborn
+tables
+typing_extensions

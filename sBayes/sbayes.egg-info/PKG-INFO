@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: sbayes
+Version: 1.1
+Summary: MCMC algorithms to identify spatial cluster in the presence of confounding effects.
+Home-page: https://github.com/derpetermann/sbayes
+Author: Nico Neureiter, Peter Ranacher
+Author-email: nico.neureiter@geo.uzh.ch, peter.ranacher@geo.uzh.ch
+License: GPLv3
+Description: UNKNOWN
+Keywords: data linguistics
+Platform: any
+Description-Content-Type: text/markdown

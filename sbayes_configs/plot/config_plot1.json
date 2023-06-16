@@ -1,0 +1,13 @@
+{
+  "results": {
+    "path_in": {
+      "clusters": ["../../sbayes_results/2023-05-26_10-06/K3/clusters_K3_0.txt"],
+      "stats": ["../../sbayes_results/2023-05-26_10-06/K3/stats_K3_0.txt"]
+    },
+    "path_out": "../../sbayes_plots"
+  },
+  "data": {
+    "features": "../../preprocessed_data/ancient_family.csv",
+    "feature_states": "../../preprocessed_data/feature_states.csv"
+  }
+}

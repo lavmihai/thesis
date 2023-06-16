@@ -1,0 +1,16 @@
+descartes
+geopandas
+matplotlib
+numpy>=1.21
+pygeos
+pandas
+pyproj
+scipy
+Shapely
+seaborn
+setuptools
+cartopy
+typing_extensions
+tables
+pydantic
+ruamel.yaml

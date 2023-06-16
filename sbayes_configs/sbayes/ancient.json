@@ -1,0 +1,24 @@
+{
+    "preprocessed_data": {
+        "features": "../preprocessed_data/ancient_family.csv",
+        "feature_states": "../preprocessed_data/features_states.csv"
+    },
+    "model": {
+        "inheritance": true,
+        "areas": 1,
+        "sample_source": true,
+        "languages_per_area ": {
+            "min":3,
+            "max": 50
+        },
+        "prior ": {
+            "universal": {
+                "type": "dirichlet"
+            }
+        }
+    },
+    "results": {
+        "path": "sbayes/results"
+    }
+}
+
