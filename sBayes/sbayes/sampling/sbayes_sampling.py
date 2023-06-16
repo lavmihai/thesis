@@ -380,7 +380,8 @@ class ClusterMCMC(MCMC):
                 cluster_effect_proposal=ClusterEffectProposals.residual_counts,
             ),
             'cluster_jump': ClusterJump(
-                weight=0.1 * operators_config.clusters,
+                # weight=0.1 * operators_config.clusters,
+                weight=0.1 * operators_config.clusters if self.n_clusters > 1 else 0.0,
                 model_by_chain=self.posterior_per_chain,
                 features=self.features,
                 resample_source=True,

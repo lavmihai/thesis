@@ -16,7 +16,7 @@ mcmc:
         warmup_chains: 30
     sample_from_prior: false
 model:
-    clusters: [5,6,7,8]
+    clusters: [1]
     sample_source: true
     confounders:
         - universal
