@@ -1,0 +1,105 @@
+Language,Glottocode,Polygon,Type
+Achaemenid Elamite,elam1244,TRUE,ancient
+Amorite,amor1239,TRUE,ancient
+Ancient South Arabian,sayh1236,TRUE,ancient
+Arabic,arab1395,TRUE,ancient
+Classical.Armenian,,,ancient
+Coptic,copt1239,TRUE,ancient
+Dumaitic North Arabian,duma1255,TRUE,ancient
+Earlier Egyptian,egyp1246,TRUE,ancient
+Early.Old.Swedish,,,ancient
+Eblaite,ebla1238,TRUE,ancient
+Hasaitic North Arabian,hasa1249,TRUE,ancient
+Hittite,hitt1242,TRUE,ancient
+Hurrian,hurr1240,TRUE,ancient
+Imperial Aramaic,impe1235,TRUE,ancient
+Jewish Babylonian Aramaic,jewi1240,TRUE,ancient
+Jewish Palestinian Aramaic,pale1261,TRUE,ancient
+Later Egyptian,copt1239,TRUE,ancient
+Luwian,luvi1235,TRUE,ancient
+Mandaic Aramaic,clas1253,TRUE,ancient
+Middle Aramaic,midd1366,TRUE,ancient
+Middle Assyrian,akka1240,TRUE,ancient
+Middle Babylonian,akka1240,TRUE,ancient
+Middle Egyptian,egyp1246,TRUE,ancient
+Middle.Breton,midd1359,TRUE,ancient
+Middle.Cornish,corn1251,TRUE,ancient
+Middle.Dutch,midd1321,TRUE,ancient
+Middle.English,midd1317,TRUE,ancient
+Middle.French,,,ancient
+Middle.Greek,,,ancient
+Middle.High.German,midd1343,TRUE,ancient
+Middle.Irish,oldi1245,TRUE,ancient
+Middle.Low.German,midd1318,TRUE,ancient
+Middle.Persian,,,ancient
+Middle.Welsh,midd1363,TRUE,ancient
+Mishnaic Hebrew,hebr1246,TRUE,ancient
+Neo-Assyrian,akka1240,TRUE,ancient
+Neo-Babylonian,akka1240,TRUE,ancient
+Old Akkadian,akka1240,TRUE,ancient
+Old Aramaic,olda1246,TRUE,ancient
+Old Assyrian,akka1240,TRUE,ancient
+Old Babylonian,akka1240,TRUE,ancient
+Old Elamite,elam1244,TRUE,ancient
+Old.Albanian,,,ancient
+Old.Church.Slavic,,,ancient
+Old.Czech,,,ancient
+Old.English,olde1238,TRUE,ancient
+Old.French,oldf1239,TRUE,ancient
+Old.Frisian,oldf1241,TRUE,ancient
+Old.Icelandic,,,ancient
+Old.Lithuanian,,,ancient
+Old.Low.German,,,ancient
+Old.Norwegian,,,ancient
+Old.Polish,,,ancient
+Old.Portuguese,,,ancient
+Old.Provencal,,,ancient
+Old.Russian,,,ancient
+Old.Sardinian,,,ancient
+Old.Sicilian,,,ancient
+Old.Spanish,,,ancient
+Old.Tuscan,,,ancient
+Phoenician,phoe1239,TRUE,ancient
+Samal,sama1317,TRUE,ancient
+Standard Biblical Hebrew,bibl1238,TRUE,ancient
+Sumerian,sume1241,TRUE,ancient
+Syriac,clas1252,TRUE,ancient
+Ugaritic,ugar1238,TRUE,ancient
+Arvanitika.Albanian,,,modern
+Modern.Eastern.Armenian,,TRUE,modern
+Modern.Breton,,,modern
+Modern.Bulgarian,,TRUE,modern
+Czech,,TRUE,modern
+Danish,,TRUE,modern
+Dutch,,TRUE,modern
+English,,TRUE,modern
+French,,TRUE,modern
+Northern.Frisian,,,modern
+Cappadocian.Greek,,,modern
+Modern.Greek,,TRUE,modern
+High.Allemanic,,,modern
+Icelandic,,TRUE,modern
+Modern.Irish,,,modern
+Italian,,TRUE,modern
+Latvian,,TRUE,modern
+Lithuanian,,TRUE,modern
+Norwegian,,TRUE,modern
+Pashto,,,modern
+Farsi,,,modern
+Polish,,TRUE,modern
+Portuguese,,TRUE,modern
+Modern.Russian,,TRUE,modern
+Modern.Sardinian..Logudorese.,,,modern
+Modern.Sicilian,,,modern
+Spanish,,TRUE,modern
+Swedish,,TRUE,modern
+ModernWelsh,,,modern
+Abkhaz,,,modern
+Georgian,,,modern
+Hunzib,,,modern
+Turkish,,TRUE,modern
+Finnish,,TRUE,modern
+Hungarian,,TRUE,modern
+Basque,,TRUE,modern
+Modern Hebrew,,,modern
+Egyptian Arabic,,,modern

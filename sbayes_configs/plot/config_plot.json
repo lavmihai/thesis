@@ -1,30 +1,30 @@
 {
   "results": {
     "path_in": {
-      "clusters": ["../../sbayes_results/2023-05-31_11-39/K2/clusters_K2_0.txt",
-                   "../../sbayes_results/2023-05-31_11-39/K3/clusters_K3_0.txt",
-                   "../../sbayes_results/2023-05-31_11-39/K4/clusters_K4_0.txt",
-                   "../../sbayes_results/2023-06-15_11-20/K5/clusters_K5_0.txt",
-                   "../../sbayes_results/2023-06-15_11-20/K6/clusters_K6_0.txt",
-                   "../../sbayes_results/2023-06-15_11-20/K7/clusters_K7_0.txt",
-                   "../../sbayes_results/2023-06-15_11-20/K8/clusters_K8_0.txt"],
-      "stats": ["../../sbayes_results/2023-05-31_11-39/K2/stats_K2_0.txt",
-                "../../sbayes_results/2023-05-31_11-39/K3/stats_K3_0.txt",
-                "../../sbayes_results/2023-05-31_11-39/K4/stats_K4_0.txt",
-                "../../sbayes_results/2023-06-15_11-20/K5/stats_K5_0.txt",
-                "../../sbayes_results/2023-06-15_11-20/K6/stats_K6_0.txt",
-                "../../sbayes_results/2023-06-15_11-20/K7/stats_K7_0.txt",
-                "../../sbayes_results/2023-06-15_11-20/K8/stats_K8_0.txt"]
+      "clusters": ["../../sbayes_results/2023-09-06_17-26/K1/clusters_K1_0.txt",
+    ""],
+      "stats": ["../../sbayes_results/2023-09-06_17-26/K1/stats_K1_0.txt"]
     },
     "path_out": "../../sbayes_plots"
   },
 
   
   "data": {
-    "features": "../../preprocessed_data/ancient_family.csv",
+    "features": "../../preprocessed_data/modern_family.csv",
     "feature_states": "../../preprocessed_data/feature_states.csv"
   },
 
+
+  "map": {
+    "legend": {
+      "correspondence": {
+        "add": true,
+        "color_labels": true,
+        "show_all": true,
+        "n_columns": 7
+      }
+    }
+  },
 
   "weight_plot": {
     "content": {

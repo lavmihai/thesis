@@ -1,0 +1,347 @@
+{
+    "AdpN": {
+        "Prepositions": 0.36363636363636365,
+        "Postpositions": 0.5151515151515151,
+        "No adpositions": 0.0707070707070707,
+        "No dominant order": 0.030303030303030304,
+        "Inpositions": 0.020202020202020204
+    },
+    "NPconj": {
+        "And different from with": 0.7096774193548387,
+        "And identical to with": 0.2903225806451613
+    },
+    "GenPron": {
+        "3rd person only but also nonsingular": 0.13,
+        "In 3rd person  1st andor 2nd person": 0.09,
+        "No gender distinctions": 0.58,
+        "3rd person singular only": 0.18,
+        "1st or 2nd person but not 3rd": 0.02
+    },
+    "NegMorph": {
+        "Negative particle": 0.5,
+        "Variation between negative word and affix": 0.04,
+        "Negative affix": 0.23,
+        "Negative word unclear if verb or particle": 0.07,
+        "Double negation": 0.13,
+        "Negative auxiliary verb": 0.03
+    },
+    "ClausePosition": {
+        "fixedpostmain": 0.09090909090909091,
+        "flexiblerelational": 0.2727272727272727,
+        "flexibleadjacent": 0.45454545454545453,
+        "fixedpremain": 0.18181818181818182
+    },
+    "GenN": {
+        "N": 0.3469387755102041,
+        "Y": 0.6530612244897959
+    },
+    "PronDem": {
+        "Related for all demonstratives": 0.1590909090909091,
+        "Related to remote demonstratives": 0.11363636363636363,
+        "Unrelated": 0.4772727272727273,
+        "Related to nonremote demonstratives": 0.056818181818181816,
+        "Related by gender markers": 0.10227272727272728,
+        "Related for nonhuman reference": 0.09090909090909091
+    },
+    "ComInst": {
+        "Identity": 0.2054794520547945,
+        "Differentiation": 0.684931506849315,
+        "Mixed": 0.1095890410958904
+    },
+    "AdjDegW": {
+        "N": 0.631578947368421,
+        "Y": 0.3684210526315789
+    },
+    "PolarQ": {
+        "Initial": 0.2,
+        "No question particle": 0.34444444444444444,
+        "Final": 0.3,
+        "Other position": 0.022222222222222223,
+        "Second position": 0.07777777777777778,
+        "In either of two positions": 0.05555555555555555
+    },
+    "SOV": {
+        "No dominant order": 0.16161616161616163,
+        "VSO": 0.10101010101010101,
+        "SVO": 0.29292929292929293,
+        "SOV": 0.3838383838383838,
+        "VOS": 0.030303030303030304,
+        "OVS": 0.030303030303030304
+    },
+    "OrdNum": {
+        "First two three": 0.056818181818181816,
+        "Firstoneth twoth threeth": 0.20454545454545456,
+        "Oneth twoth threeth": 0.07954545454545454,
+        "First twoth threeth": 0.26136363636363635,
+        "First second threeth": 0.13636363636363635,
+        "None": 0.20454545454545456,
+        "Various": 0.03409090909090909,
+        "One two three": 0.022727272727272728
+    },
+    "Agr.Role": {
+        "N": 0.75,
+        "Y": 0.25
+    },
+    "Prohibitive": {
+        "Special imperative  special negative": 0.3368421052631579,
+        "Special imperative  normal negative": 0.07368421052631578,
+        "Normal imperative  special negative": 0.3684210526315789,
+        "Normal imperative  normal negative": 0.22105263157894736
+    },
+    "Gender": {
+        "Semantic and formal": 0.24175824175824176,
+        "No gender": 0.5604395604395604,
+        "Semantic": 0.1978021978021978
+    },
+    "PronomS": {
+        "Subject affixes on verb": 0.5268817204301075,
+        "Optional pronouns in subject position": 0.1935483870967742,
+        "Obligatory pronouns in subject position": 0.11827956989247312,
+        "Mixed": 0.08602150537634409,
+        "Subject pronouns in different position": 0.053763440860215055,
+        "Subject clitics on variable host": 0.021505376344086023
+    },
+    "Aspect": {
+        "No grammatical marking": 0.5604395604395604,
+        "Grammatical marking": 0.43956043956043955
+    },
+    "DegWAdj": {
+        "N": 0.2631578947368421,
+        "Y": 0.7368421052631579
+    },
+    "Rec.P": {
+        "N": 0.10526315789473684,
+        "Y": 0.8947368421052632
+    },
+    "PossPre": {
+        "N": 0.5,
+        "Y": 0.5
+    },
+    "NounNum": {
+        "N": 0.6063829787234043,
+        "Y": 0.39361702127659576
+    },
+    "Passive": {
+        "Present": 0.5714285714285714,
+        "Absent": 0.42857142857142855
+    },
+    "NegV": {
+        "NegV": 0.46601941747572817,
+        "Type 1  Type 3": 0.019417475728155338,
+        "VNeg": 0.22330097087378642,
+        "OptDoubleNeg": 0.0970873786407767,
+        "Type 3  Type 4": 0.009708737864077669,
+        "ObligDoubleNeg": 0.1262135922330097,
+        "Type 2  Type 4": 0.019417475728155338,
+        "Type 1  Type 4": 0.038834951456310676
+    },
+    "NAdj": {
+        "N": 0.4,
+        "Y": 0.6
+    },
+    "Imperative": {
+        "Second singular and second plural": 0.52,
+        "Second singular": 0.06,
+        "Second person numberneutral": 0.15,
+        "Second plural": 0.03,
+        "No secondperson imperatives": 0.24
+    },
+    "IndefArt": {
+        "No indefinite but definite article": 0.1927710843373494,
+        "Indefinite affix": 0.03614457831325301,
+        "Indefinite word distinct from one": 0.20481927710843373,
+        "No definite or indefinite article": 0.3855421686746988,
+        "Indefinite word same as one": 0.18072289156626506
+    },
+    "DefArt": {
+        "Definite affix": 0.05555555555555555,
+        "Definite word distinct from demonstrative": 0.4,
+        "No definite or indefinite article": 0.35555555555555557,
+        "No definite but indefinite article": 0.1111111111111111,
+        "Demonstrative word used as definite article": 0.07777777777777778
+    },
+    "Optative": {
+        "Inflectional optative absent": 0.9148936170212766,
+        "Inflectional optative present": 0.0851063829787234
+    },
+    "IntRef": {
+        "Differentiated": 0.49333333333333335,
+        "Identical": 0.5066666666666667
+    },
+    "Reduplication": {
+        "Productive full and partial reduplication": 0.5952380952380952,
+        "No productive reduplication": 0.2619047619047619,
+        "Full reduplication only": 0.14285714285714285
+    },
+    "Vper": {
+        "Only the A argument": 0.21782178217821782,
+        "No person marking": 0.24752475247524752,
+        "A or P argument": 0.0297029702970297,
+        "Only the P argument": 0.04950495049504951,
+        "Both the A and P arguments": 0.45544554455445546
+    },
+    "RecRef.I": {
+        "N": 0.7368421052631579,
+        "Y": 0.2631578947368421
+    },
+    "PossLocus": {
+        "Double marking": 0.08421052631578947,
+        "Dependent marking": 0.4,
+        "No marking": 0.1368421052631579,
+        "Head marking": 0.3157894736842105,
+        "Other": 0.06315789473684211
+    },
+    "ContQNonInitial": {
+        "N": 0.4065934065934066,
+        "Y": 0.5934065934065934
+    },
+    "DemN": {
+        "NounDemonstrative": 0.32653061224489793,
+        "DemonstrativeNoun": 0.5816326530612245,
+        "Mixed": 0.07142857142857142,
+        "Demonstrative before and after Noun": 0.02040816326530612
+    },
+    "Past": {
+        "Present no remoteness distinctions": 0.44086021505376344,
+        "No past tense": 0.43010752688172044,
+        "Present 23 remoteness distinctions": 0.10752688172043011,
+        "Present 4 or more remoteness distinctions": 0.021505376344086023
+    },
+    "Agr.none": {
+        "N": 0.9166666666666666,
+        "Y": 0.08333333333333333
+    },
+    "Agr.State": {
+        "N": 0.9166666666666666,
+        "Y": 0.08333333333333333
+    },
+    "AdjN": {
+        "N": 0.5578947368421052,
+        "Y": 0.4421052631578947
+    },
+    "RecRef.D": {
+        "N": 0.4473684210526316,
+        "Y": 0.5526315789473685
+    },
+    "PossSuff": {
+        "N": 0.4807692307692308,
+        "Y": 0.5192307692307693
+    },
+    "Agr.Gender": {
+        "N": 0.3333333333333333,
+        "Y": 0.6666666666666666
+    },
+    "PossAff.P": {
+        "N": 0.5862068965517241,
+        "Y": 0.41379310344827586
+    },
+    "Gender.n": {
+        "Two": 0.1935483870967742,
+        "None": 0.5483870967741935,
+        "Three": 0.12903225806451613,
+        "Five or more": 0.08602150537634409,
+        "Four": 0.043010752688172046
+    },
+    "NGen": {
+        "N": 0.5510204081632653,
+        "Y": 0.4489795918367347
+    },
+    "Agr.Number": {
+        "N": 0.16666666666666666,
+        "Y": 0.8333333333333334
+    },
+    "NVconj": {
+        "Identity": 0.5128205128205128,
+        "Differentiation": 0.3974358974358974,
+        "Both expressed by juxtaposition": 0.08974358974358974
+    },
+    "DistNum": {
+        "Marked by mixed or other strategies": 0.11475409836065574,
+        "Marked by reduplication": 0.21311475409836064,
+        "Marked by suffix": 0.16393442622950818,
+        "No distributive numerals": 0.3442622950819672,
+        "Marked by following word": 0.04918032786885246,
+        "Marked by preceding word": 0.06557377049180328,
+        "Marked by prefix": 0.04918032786885246
+    },
+    "RelN": {
+        "NounRelative clause": 0.5714285714285714,
+        "Correlative": 0.03296703296703297,
+        "Internally headed": 0.07692307692307693,
+        "Relative clauseNoun": 0.18681318681318682,
+        "Mixed": 0.10989010989010989,
+        "Adjoined": 0.02197802197802198
+    },
+    "DemDis": {
+        "Twoway contrast": 0.5113636363636364,
+        "Threeway contrast": 0.36363636363636365,
+        "No distance contrast": 0.045454545454545456,
+        "Fourway contrast": 0.03409090909090909,
+        "Five or moreway contrast": 0.045454545454545456
+    },
+    "OXV": {
+        "VOX": 0.4,
+        "XVO": 0.015384615384615385,
+        "OXV": 0.046153846153846156,
+        "No dominant order": 0.26153846153846155,
+        "OVX": 0.09230769230769231,
+        "VXO": 0.015384615384615385,
+        "XOV": 0.16923076923076924
+    },
+    "NumNoun": {
+        "N": 0.35106382978723405,
+        "Y": 0.648936170212766
+    },
+    "Agr.Case": {
+        "N": 0.9166666666666666,
+        "Y": 0.08333333333333333
+    },
+    "IndefPron": {
+        "Special": 0.06756756756756757,
+        "Interrogativebased": 0.5405405405405406,
+        "Genericnounbased": 0.2972972972972973,
+        "Mixed indefinites": 0.06756756756756757,
+        "Existential construction": 0.02702702702702703
+    },
+    "NPlural": {
+        "Plural suffix": 0.46534653465346537,
+        "Plural stem change": 0.019801980198019802,
+        "Plural word": 0.15841584158415842,
+        "Plural prefix": 0.06930693069306931,
+        "Plural clitic": 0.09900990099009901,
+        "Mixed morphological plural": 0.07920792079207921,
+        "No plural": 0.0891089108910891,
+        "Plural complete reduplication": 0.019801980198019802
+    },
+    "AdpPM": {
+        "No person marking": 0.53,
+        "Pronouns only": 0.26,
+        "Pronouns and nouns": 0.08,
+        "No adpositions": 0.13
+    },
+    "Alignment": {
+        "SvAtrxP": 0.325,
+        "SvAtrvP": 0.4375,
+        "SvPxAtr": 0.075,
+        "Mixed": 0.1625
+    },
+    "Future": {
+        "No inflectional future": 0.5164835164835165,
+        "Inflectional future exists": 0.4835164835164835
+    },
+    "PronAdnDem": {
+        "Identical": 0.7105263157894737,
+        "Different stem": 0.15789473684210525,
+        "Different inflection": 0.13157894736842105
+    },
+    "PossClass": {
+        "No possessive classification": 0.6595744680851063,
+        "More than five classes": 0.02127659574468085,
+        "Two classes": 0.2765957446808511,
+        "Three to five classes": 0.0425531914893617
+    },
+    "ContQInitial": {
+        "N": 0.5384615384615384,
+        "Y": 0.46153846153846156
+    }
+}

@@ -129,6 +129,9 @@ class Features:
         data: pd.DataFrame,
         feature_states: pd.DataFrame,
     ) -> S:
+        common_feature_names = np.array(list(set(feature_states.columns.to_numpy()).intersection(set(data.columns.to_numpy()))))
+        feature_states = feature_states.loc[:,common_feature_names]
+
         feature_data = data.loc[:, feature_states.columns]
         features_dict, na_number = encode_states(feature_data, feature_states)
         features_dict["names"] = feature_states.columns.to_numpy()

@@ -253,6 +253,11 @@ def range_like(a):
 
 # Encoding
 def encode_states(features_raw, feature_states):
+    # print(features_raw.iloc[0])
+    # print()
+    # print(feature_states.iloc[0])
+    # exit()
+
     # Define shapes
     n_states, n_features = feature_states.shape
     features_bin_shape = features_raw.shape + (n_states,)

@@ -940,6 +940,10 @@ class Plot:
             if cfg_content['type'] == "density_map":
                 cluster_labels = [self.objects.indices]
 
+            # print("PULA MEA")
+            # print(cluster_labels)
+            # exit()
+
             if any(len(labels) > 0 for labels in cluster_labels):
                 self.add_correspondence_table(cluster_labels, cluster_colors, cfg_legend, ax)
 
