@@ -21,7 +21,7 @@ from sbayes.mcmc_setup import MCMCSetup
 from sbayes.model import Model
 from sbayes.results import Results
 from sbayes.sampling.counts import update_feature_counts, recalculate_feature_counts
-from sbayes.sampling.operators import Operator, AlterCluster, AlterClusterGibbsish
+from sbayes.sampling.operators import Operator, AlterCluster
 from sbayes.sampling.state import Sample, Clusters
 from sbayes.load_data import Data
 from sbayes.util import normalize
@@ -215,7 +215,6 @@ Value = TypeVar("Value")
 #             adjacency_matrix=np.ones((self.N_OBJECTS, self.N_OBJECTS), dtype=bool),
 #             p_grow_connected=0.8,
 #             model_by_chain={0: DummyModel(self.N_OBJECTS)},
-#             resample_source=False,
 #             sample_from_prior=False,
 #         )
 #
@@ -227,7 +226,6 @@ Value = TypeVar("Value")
 # #             adjacency_matrix=np.ones((self.N_OBJECTS, self.N_OBJECTS), dtype=bool),
 # #             p_grow_connected=0.8,
 # #             model_by_chain={0: DummyModel(self.N_OBJECTS)},
-# #             resample_source=False,
 # #             sample_from_prior=False,
 # #             features=np.zeros((self.N_OBJECTS, 1, 1))
 # #         )
@@ -241,14 +239,14 @@ class OperatorsTest(unittest.TestCase):
 
     CONFIG_PATH = Path("test/test_files/config.yaml")
     EXPERIMENT_NAME = "operator_test"
-    N_REFERENCE_SAMPLES = 50_000
+    N_REFERENCE_SAMPLES = 2_000
 
     def run_sbayes(self):
         """Run a sbayes analysis which generates the samples to be evaluated."""
         experiment = Experiment(config_file=self.CONFIG_PATH, experiment_name=self.EXPERIMENT_NAME, log=True)
         data = Data.from_experiment(experiment)
         mcmc = MCMCSetup(data=data, experiment=experiment)
-        mcmc.sample()
+        mcmc.sample(resume=False)
 
         self.data = data
         self.results_path = experiment.path_results
@@ -287,7 +285,6 @@ class OperatorsTest(unittest.TestCase):
             s.clusters.value
             for s in self.reference_samples
         ]).transpose((1, 0, 2))
-
         experiment.close()
 
     def setUp(self) -> None:
@@ -318,6 +315,7 @@ class OperatorsTest(unittest.TestCase):
                     p=self.ref_importance.dot(self.ref_clusters[i_clust][:, i_obj])
                 )
                 print(f'p-value for cluster {i_clust} object {i_obj}:    {p_value:.3f}')
+                assert p_value > 0.01
 
             p_value_size = binom_test(
                 x=np.sum(cluster),
@@ -325,6 +323,7 @@ class OperatorsTest(unittest.TestCase):
                 p=self.ref_clusters[i_clust].mean()
             )
             print(f'p-value for cluster {i_clust} size:    {p_value_size:.3f}')
+            assert p_value_size > 0.01
 
 
 

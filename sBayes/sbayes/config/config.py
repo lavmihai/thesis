@@ -1,32 +1,32 @@
 import os
-from collections import OrderedDict
 from pathlib import Path
 from enum import Enum
 import warnings
 import json
-import io
-from typing import Union, List, Dict, Optional, Any
-from typing import OrderedDict as OrderedDictType
+from typing import Union, List, Dict, Optional
 
 try:
-    from typing import Literal
-except ImportError:
-    from typing_extensions import Literal
+    from typing import Annotated, Literal
+except ImportError:  # For python <= 3.8
+    from typing_extensions import Annotated, Literal
+
 try:
     import ruamel.yaml as yaml
 except ImportError:
     import ruamel_yaml as yaml
 
-from pydantic import BaseModel, Extra, Field
-from pydantic import root_validator, ValidationError
-from pydantic import FilePath, DirectoryPath
-from pydantic import PositiveInt, PositiveFloat, confloat, NonNegativeFloat
+from pydantic import model_validator, BaseModel, Field
+from pydantic import ValidationError
+from pydantic import DirectoryPath
+from pydantic import PositiveInt, PositiveFloat, NonNegativeFloat
+from pydantic.types import PathType
+from pydantic_core import core_schema, PydanticCustomError
 
 from sbayes.util import fix_relative_path, decompose_config_path, PathLike
 from sbayes.util import update_recursive
 
 
-class RelativePath:
+class RelativePathType(PathType):
 
     BASE_DIR: DirectoryPath = "."
 
@@ -34,30 +34,32 @@ class RelativePath:
     def fix_path(cls, value: PathLike) -> Path:
         return fix_relative_path(value, cls.BASE_DIR)
 
-
-class RelativeFilePath(FilePath, RelativePath):
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.fix_path
-        yield from super(RelativeFilePath, cls).__get_validators__()
-
-
-class RelativeDirectoryPath(DirectoryPath, RelativePath):
-
-    @classmethod
-    def __get_validators__(cls):
-        yield cls.fix_path
-        yield cls.initialize_directory
-        yield from super(RelativeDirectoryPath, cls).__get_validators__()
+    @staticmethod
+    def validate_file(path: Path, _: core_schema.ValidationInfo) -> Path:
+        path = RelativePathType.fix_path(path)
+        if path.is_file():
+            return path
+        else:
+            raise PydanticCustomError('path_not_file', 'Path does not point to a file')
 
     @staticmethod
-    def initialize_directory(path: PathLike):
+    def validate_directory(path: Path, _: core_schema.ValidationInfo) -> Path:
+        path = RelativePathType.fix_path(path)
         os.makedirs(path, exist_ok=True)
-        return path
+        if path.is_dir():
+            return path
+        else:
+            raise PydanticCustomError('path_not_directory', 'Path does not point to a directory')
 
 
-class BaseConfig(BaseModel):
+RelativeFilePath = Annotated[Path, RelativePathType('file')]
+"""A relative path that must point to a file."""
+
+RelativeDirectoryPath = Annotated[Path, RelativePathType('dir')]
+"""A relative path that must point to a directory."""
+
+
+class BaseConfig(BaseModel, extra='forbid'):
 
     """The base class for all config classes. This inherits from pydantic.BaseModel and
     configures settings that should be shared across all setting classes."""
@@ -69,13 +71,29 @@ class BaseConfig(BaseModel):
     def get_attr_doc(cls, attr: str) -> str:
         return cls.__attrdocs__.get(attr)
 
-    class Config:
+    @classmethod
+    def annotations(cls, key: str) -> Union[str, None]:
+        if key in cls.__annotations__:
+            return cls.__annotations__[key]
+        for base_cls in cls.__bases__:
+            if issubclass(base_cls, BaseConfig):
+                s = base_cls.annotations(key)
+                if s is not None:
+                    return s
+        return None
 
-        extra = Extra.forbid
-        """Do not allow unexpected keys to be defined in a config-file."""
+    @classmethod
+    def deprecated_attributes(cls) -> list:
+        return []
 
-        allow_mutation = True
-        """Make config objects immutable."""
+    @model_validator(mode="before")
+    def warn_about_deprecated_attributes(cls, values: dict):
+        for key in cls.deprecated_attributes():
+            if key in values:
+                warnings.warn(f"The {key} key in {cls.__name__} is deprecated "
+                              f"and will be removed in future versions of sBayes.")
+                values.pop(key)
+        return values
 
 
 """ ===== PRIOR CONFIGS ===== """
@@ -88,8 +106,6 @@ class GeoPriorConfig(BaseConfig):
     class Types(str, Enum):
         UNIFORM = "uniform"
         COST_BASED = "cost_based"
-        DIAMETER_BASED = "diameter_based"
-        # GAUSSIAN = "gaussian"
         SIMULATED = "simulated"
 
     class AggregationStrategies(str, Enum):
@@ -108,30 +124,33 @@ class GeoPriorConfig(BaseConfig):
         COMPLETE = "complete_graph"
 
     type: Types = Types.UNIFORM
-    """Type of prior distribution (`uniform`, `cost_based` or `gaussian`)."""
+    """Type of prior distribution. Choose from: [uniform, cost_based, simulated]."""
 
     costs: Union[RelativeFilePath, Literal["from_data"]] = "from_data"
+    # costs: FilePath = "from_data"
     """Source of the geographic costs used for cost_based geo-prior. Either `from_data`
     (derive geodesic distances from locations) or path to a CSV file."""
 
     aggregation: AggregationStrategies = AggregationStrategies.MEAN
-    """Policy defining how costs of single edges are aggregated (`mean`, `sum` or `max`)."""
+    """Policy defining how costs of single edges are aggregated. Choose from: [mean, sum or max]."""
 
     probability_function: ProbabilityFunction = ProbabilityFunction.EXPONENTIAL
-    """Monotonic function that defines how costs are mapped to prior probabilities."""
+    """Monotonic function that defines how aggregated costs are mapped to prior probabilities."""
 
-    rate: Optional[PositiveFloat]
-    """Rate at which the prior probability decreases for a cost_based geo-prior."""
+    rate: Optional[PositiveFloat] = None
+    """Rate at which the prior probability decreases for a cost_based geo-prior. Required if type=cost_based."""
 
-    inflection_point: Optional[float]
-    """The point where a sigmoid probability function reaches 0.5."""
+    inflection_point: Optional[float] = None
+    """Value where the sigmoid probability function reaches 0.5. Required if type=cost_based
+    and probability_function=sigmoid."""
 
     skeleton: Skeleton = Skeleton.MST
-    """The graph along which the costs are aggregated. Per default, the cost of edges on 
-    the minimum spanning tree are aggregated."""
+    """The graph along which the costs are aggregated. Per default, the cost of edges on the minimum
+     spanning tree (mst) are aggregated. Choose from: [mst, delaunay, diameter, complete_graph]"""
 
-    @root_validator
-    def validate_dirichlet_parameters(cls, values):
+    @model_validator(mode="before")
+    @classmethod
+    def validate_geo_prior_parameters(cls, values):
         if (values.get("type") == "cost_based") and (values.get("rate") is None):
             raise ValidationError(
                 "Field `rate` is required for geo-prior of type `cost_based`."
@@ -148,7 +167,7 @@ class ClusterSizePriorConfig(BaseConfig):
         QUADRATIC_SIZE = "quadratic"
 
     type: Types
-    """Type of prior distribution (`uniform_area`, `uniform_size` or `quadratic`)."""
+    """Type of prior distribution. Choose from: [uniform_area, uniform_size or quadratic]."""
 
     min: PositiveInt = 2
     """Minimum cluster size."""
@@ -168,21 +187,20 @@ class DirichletPriorConfig(BaseConfig):
         SYMMETRIC_DIRICHLET = "symmetric_dirichlet"
 
     type: Types = Types.UNIFORM
-    """Type of prior distribution (`uniform` or `dirichlet`)."""
+    """Type of prior distribution. Choose from: [uniform, dirichlet, jeffreys, BBS, symmetric_dirichlet]"""
 
     file: Optional[RelativeFilePath] = None
-    """Path to the parameters of the Dirichlet distribution."""
+    """Path to parameters of the Dirichlet distribution (YAML or JSON format).
+    This or `parameters` is required if type=dirichlet."""
 
     parameters: Optional[dict] = None
-    """Parameters of the Dirichlet distribution."""
-
-    prior_confounder: Optional[str] = None
-    """A string indicating which confounder should be used as the mean of the prior."""
+    """Parameters of the Dirichlet distribution. This or `file` is required if type=dirichlet."""
 
     prior_concentration: Optional[float] = None
-    """If another confounder is used as mean, we need to manually define the concentration of the Dirichlet prior."""
+    """The concentration of the prior distribution. Required if type=symmetric_dirichlet."""
 
-    @root_validator(pre=True)
+    @model_validator(mode="before")
+    @classmethod
     def warn_when_using_default_type(cls, values):
         if "type" not in values:
             warnings.warn(
@@ -190,21 +208,28 @@ class DirichletPriorConfig(BaseConfig):
             )
         return values
 
-    @root_validator(pre=True)
-    def validate_dirichlet_parameters(cls, values):
-        prior_type = values.get("type")
-
-        if prior_type == "dirichlet":
-            if (values.get("file") is None) and (values.get("parameters") is None):
+    @model_validator(mode="after")
+    def validate_dirichlet_parameters(self):
+        cls_name = type(self).__name__
+        if self.type == self.Types.DIRICHLET:
+            if (self.file is None) and (self.parameters is None):
                 raise ValidationError(
-                    f"Provide `file` or `parameters` for `{cls.__name__}` of type `dirichlet`."
+                    f"Provide `file` or `parameters` for `{cls_name}` of type `dirichlet`."
                 )
 
-        elif prior_type in ["universal", "symmetric_dirichlet"]:
-            if values.get("prior_concentration") is None:
-                raise ValidationError(f"Provide `prior_concentration` for `{cls.__name__}` of type `{prior_type}`.")
+        elif self.type in [self.Types.UNIVERSAL, self.Types.SYMMETRIC_DIRICHLET]:
+            if self.prior_concentration is None:
+                raise ValidationError(f"Provide `prior_concentration` for `{cls_name}` of type `{self.type}`.")
 
-        return values
+        return self
+
+    @model_validator(mode="after")
+    def validate_no_hierarchical_prior(self):
+        if self.type == self.Types.UNIVERSAL:
+            type_options = [t.value for t in self.Types if t != self.Types.UNIVERSAL]
+            raise NotImplementedError(f"The hierarchical prior type `universal` is not implemented yet."
+                                      f" Choose one of the following prior types: {type_options}")
+        return self
 
     def dict(self, *args, **kwargs):
         """A custom dict method to hide non-applicable attributes depending on prior type."""
@@ -259,18 +284,18 @@ class ModelConfig(BaseConfig):
     clusters: Union[int, List[int]] = 1
     """The number of clusters to be inferred."""
 
-    # confounders: OrderedDictType[str, List[str]] = Field(default_factory=OrderedDict)
-    # """Dictionary with confounders as keys and lists of corresponding groups as values."""
     confounders: List[str] = Field(default_factory=list)
     """The list of confounder names."""
-
-    sample_source: bool = True
-    """Sample the source component for each observation (implicitly activates Gibbs sampling)."""
 
     prior: PriorConfig
     """The config section defining the priors of the model"""
 
-    @root_validator(pre=True)
+    @classmethod
+    def deprecated_attributes(cls) -> list:
+        return ["sample_source"]
+
+    @model_validator(mode="before")
+    @classmethod
     def validate_confounder_priors(cls, values):
         """Ensure that priors are defined for each confounder."""
         for conf in values['confounders']:
@@ -281,22 +306,20 @@ class ModelConfig(BaseConfig):
 
 class OperatorsConfig(BaseConfig):
 
-    """The frequency of each MCMC operator. Will be normalized to 1.0 at runtime."""
+    """The frequency at which each parameter is updated by an MCMC operator. Will be normalized to 1.0 at runtime."""
 
-    clusters: NonNegativeFloat = 45.0
+    clusters: NonNegativeFloat = 70.0
     """Frequency at which the assignment of objects to clusters is changed."""
 
-    weights: NonNegativeFloat = 15.0
+    weights: NonNegativeFloat = 10.0
     """Frequency at which mixture weights are changed."""
 
-    cluster_effect: NonNegativeFloat = 5.0
-    """Frequency at which cluster effect parameters are changed."""
-
-    confounding_effects: NonNegativeFloat = 15.0
-    """Frequency at which confounding effects parameters are changed."""
-
-    source: NonNegativeFloat = 10.0
+    source: NonNegativeFloat = 20.0
     """Frequency at which the assignments of observations to mixture components are changed."""
+
+    @classmethod
+    def deprecated_attributes(cls) -> list:
+        return ["cluster_effect", "confounding_effects"]
 
 
 class WarmupConfig(BaseConfig):
@@ -308,6 +331,90 @@ class WarmupConfig(BaseConfig):
 
     warmup_chains: PositiveInt = 10
     """The number parallel chains used in the warm-up phase."""
+
+
+class InitializationConfig(BaseConfig):
+
+    """Configuration for the initialization of a sample in each warm-up chain of the MCMC."""
+
+    attempts: PositiveInt = 10
+    """Number of initial samples for each warm-up chain. Only the one with highest posterior will be used."""
+
+    em_steps: PositiveInt = 50
+    """Number of steps in the expectation-maximization initializer."""
+
+    objects_per_cluster: PositiveInt = 10
+    """The average number of objects assigned to each cluster in the initialization phase."""
+
+    _initial_cluster_steps: bool = True
+    """If `true`, apply an initial cluster operator step to each cluster before selecting the best sample."""
+
+    @classmethod
+    def deprecated_attributes(cls) -> list:
+        return ["initial_cluster_steps"]
+
+
+class MC3Config(BaseConfig):
+
+    """Configuration of Metropolis-Coupled Markov Chain Monte Carlo (MC3) parameters."""
+
+    activate: bool = False
+    """If `true`, use Metropolis-Coupled Markov Chain Monte Carlo sampling (MC3)."""
+
+    chains: PositiveInt = 4
+    """Number of MC3 chains."""
+
+    swap_interval: PositiveInt = 1000
+    """Number of MCMC steps between each MC3 chain swap attempt."""
+
+    _swap_attempts: PositiveInt = 100
+    """Number of chain pairs which are proposed to be swapped after each interval."""
+
+    _only_swap_adjacent_chains: bool = False
+    """Only swap chains that are next to each other in the temperature schedule."""
+
+    temperature_diff: PositiveFloat = 0.05
+    """Difference between temperatures of MC3 chains."""
+
+    prior_temperature_diff: PositiveFloat = "temperature_diff"
+    """Difference between prior-temperatures of MC3 chains. Defaults to the same values as `temperature_diff`."""
+
+    exponential_temperatures: bool = False
+    """If `true`, temperature increase exponentially ((1 + dt)**i), instead of linearly (1 + dt*i)."""
+
+    log_swap_matrix: bool = True
+    """If `True`, write a matrix containing the number of swaps between each pair of chains to an npy-file."""
+
+    @classmethod
+    def deprecated_attributes(cls) -> list:
+        return ["only_heat_likelihood", "swap_attempts", "only_swap_adjacent_chains"]
+
+    @model_validator(mode="after")
+    def validate_mc3(self):
+        if self.activate and self.chains < 2:
+            self.activate = False
+            warnings.warn(f"Deactivated MC3, as it is pointless with less than 2 chains.")
+
+        # The number of swap attempts cannot exceed the number of valid chain pairs. The
+        # number of valid chain pairs depends on whether we restrict swaps to adjacent
+        # chains.
+        if self._only_swap_adjacent_chains:
+            valid_chain_pairs = self.chains - 1
+        else:
+            valid_chain_pairs = int(self.chains * (self.chains - 1) / 2)
+        if self._swap_attempts > valid_chain_pairs:
+            self._swap_attempts = valid_chain_pairs
+            # warnings.warn(
+            #     f"With `only_swap_adjacent_chains={self.only_swap_adjacent_chains}` and "
+            #     f"{self.chains} chains the number of swap attempts can not be more than "
+            #     f"{valid_chain_pairs}. Adjusted swap_attempts={valid_chain_pairs}."
+            # )
+
+        # Per default `prior_temperature_diff` is the same as `temperature_diff`.
+        if self.prior_temperature_diff == "temperature_diff":
+            self.prior_temperature_diff = self.temperature_diff
+
+        return self
 
 
 class MCMCConfig(BaseConfig):
@@ -326,22 +433,41 @@ class MCMCConfig(BaseConfig):
     sample_from_prior: bool = False
     """If `true`, the MCMC ignores the data and samples parameters from the prior distribution."""
 
-    init_objects_per_cluster: PositiveInt = 5
-    """The number of objects in the initial clusters at the start of an MCMC run."""
-
-    grow_to_adjacent: confloat(ge=0, le=1) = 0.8
+    grow_to_adjacent: Annotated[float, Field(ge=0, le=1)] = 0.8
     """The fraction of grow-steps that only propose adjacent languages as candidates to be added to an area."""
 
-    operators: OperatorsConfig = Field(default_factory=OperatorsConfig)
-    warmup: WarmupConfig = Field(default_factory=WarmupConfig)
+    screen_log_interval: PositiveInt = 1000
+    """Frequency at which the step ID and log-likelihood are written to the screen logger (and log file)."""
 
-    @root_validator
-    def validate_sample_spacing(cls, values):
+    operators: OperatorsConfig = Field(default_factory=OperatorsConfig)
+    initialization: InitializationConfig = Field(default_factory=InitializationConfig)
+    warmup: WarmupConfig = Field(default_factory=WarmupConfig)
+    mc3: MC3Config = Field(default_factory=MC3Config)
+
+    @model_validator(mode="before")
+    @classmethod
+    def forward_init_objects_per_cluster(cls, values):
+        if "init_objects_per_cluster" in values:
+            if "initialization" in values and "objects_per_cluster" in values["initialization"]:
+                raise ValueError("The `init_objects_per_cluster` field was moved to `initialization > "
+                                 "objects_per_cluster`. Please remove the old `init_objects_per_cluster` entry.")
+            else:
+                if "initialization" not in values:
+                    values["initialization"] = {}
+                values["initialization"]["objects_per_cluster"] = values.pop("init_objects_per_cluster")
+                warnings.warn("The `init_objects_per_cluster` field was moved to `initialization > objects_per_cluster."
+                              " The value is be forwarded automatically, but this will not be supported in future "
+                              "versions of sBayes. Please adapt the config file accordingly.")
+        return values
+
+    @model_validator(mode="after")
+    def validate_sample_spacing(self):
         # Tracer does not like unevenly spaced samples
-        spacing = values['steps'] % values['samples']
+        spacing = self.steps % self.samples
         if spacing != 0.:
             raise ValueError("Inconsistent spacing between samples. Set ´steps´ to be a multiple of ´samples´.")
-        return values
+        return self
+
 
 class DataConfig(BaseConfig):
 
@@ -362,12 +488,24 @@ class ResultsConfig(BaseConfig):
     """Information on where and how results are written."""
 
     path: RelativeDirectoryPath = Field(
-        default_factory=lambda: RelativeDirectoryPath.fix_path("./results")
+        default_factory=lambda: RelativePathType.fix_path("./results")
     )
     """Path to the results directory."""
 
     log_file: bool = True
     """Whether to write log-messages to a file."""
+
+    log_likelihood: bool = True
+    """Whether to log the likelihood of each observation in a .h5 file (used for model comparison)."""
+
+    log_source: bool = False
+    """Whether to log the proportion of objects assigned to each component in each feature."""
+
+    log_hot_chains: bool = True
+    """Whether to create log files (clusters, stats and operator_stats) for hot MC3 chains."""
+
+    float_precision: PositiveInt = 8
+    """The precision (number of decimal places) of real valued parameters in the stats file."""
 
 
 class SettingsForLinguists(BaseConfig):
@@ -386,14 +524,6 @@ class SBayesConfig(BaseConfig):
     model: ModelConfig
     mcmc: MCMCConfig
     results: ResultsConfig = Field(default_factory=ResultsConfig)
-    # settings_for_linguists: SettingsForLinguists = Field(default_factory=SettingsForLinguists)
-
-    @root_validator(pre=True)
-    def validate_operators(cls, values):
-        # Do not use source operators if sampling from source is disabled
-        if not values['model']['sample_source']:
-            values['mcmc']['operators']['source'] = 0.0
-        return values
 
     @classmethod
     def from_config_file(
@@ -403,12 +533,12 @@ class SBayesConfig(BaseConfig):
 
         # Prepare RelativePath class to allow paths relative to the config file location
         base_directory, config_file = decompose_config_path(path)
-        RelativePath.BASE_DIR = base_directory
+        RelativePathType.BASE_DIR = base_directory
 
         # Load a config dictionary from the json file
         with open(path, "r") as f:
             path_str = str(path).lower()
-            if path_str.endswith(".yaml"):
+            if path_str.endswith(".yaml") or path_str.endswith("yml"):
                 yaml_loader = yaml.YAML(typ='safe')
                 config_dict = yaml_loader.load(f)
             else:
@@ -424,165 +554,3 @@ class SBayesConfig(BaseConfig):
     def update(self, other: dict):
         new_dict = update_recursive(self.dict(), other)
         return type(self)(**new_dict)
-
-
-#
-
-# ...BLACK MAGIC STARTS HERE...
-
-# Automatically generating yaml files with comments from the config classes and attribute
-# docstrings requires some code introspection, which is a bit obscure and at this point
-# not well documented.
-
-#
-
-#
-
-
-def ruamel_yaml_dumps(thing):
-    y = yaml.YAML()
-    y.indent(mapping=4, sequence=4, offset=4)
-    out = io.StringIO()
-    y.dump(thing, stream=out)
-    out.seek(0)
-    return out.read()
-
-
-def generate_template():
-    import ast
-    import re
-
-    def is_config_class(obj: Any) -> bool:
-        """Check whether the given object is a subtype of BaseConfig"""
-        return isinstance(obj, type) and issubclass(obj, BaseConfig)
-
-    def could_be_a_docstring(node) -> bool:
-        """Check whether the AST node is a string constant, i.e. could be a doc-string."""
-        return isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)
-
-    def analyze_class_docstrings(modulefile: str) -> dict:
-        """Collect all doc-strings of attributes in each class in a nested dictionary
-        of the following structure:
-            {class_name: {attribute_name: doc_string}}.
-
-        Args:
-            modulefile: the name of the python module to be analysed
-
-        Returns:
-            The nested dictionary with attribute doc-strings
-
-        """
-        with open(modulefile) as fp:
-            root = ast.parse(fp.read())
-
-        alldocs = {}
-        for child in root.body:
-            if not isinstance(child, ast.ClassDef):
-                continue
-
-            alldocs[child.name] = docs = {}
-            last = None
-            for childchild in child.body:
-                if could_be_a_docstring(childchild):
-                    if last:  # Skip class doc string
-                        s = childchild.value.s
-                        # replace multiple spaces and linebreaks by single space.
-                        s = re.sub('\\s+', ' ', s)
-                        docs[last] = s
-                elif isinstance(childchild, ast.AnnAssign):
-                    last = childchild.target.id
-                else:
-                    last = None
-
-        return alldocs
-
-    for class_name, docs in analyze_class_docstrings(__file__).items():
-        cls: type = globals()[class_name]
-        cls.__attrdocs__ = docs
-
-    # all_docs = analyze_class_docstrings(__file__)
-    # for cls in filter(globals().values, is_config_class):
-    #     if issubclass(cls, DirichletPriorConfig):
-    #         all_docs[cls].set_defaults(all_docs[DirichletPriorConfig])
-    #
-    # def get_docstring(cls: type, attr: str):
-    #     if not issubclass(cls, BaseConfig):
-    #         return None
-    #     cls_docs = all_docs.get(cls.__name__, {})
-    #     attr_doc = cls_docs.get(attr)
-    #     return attr_doc
-
-    schema = SBayesConfig.schema()
-    definitions = schema.pop('definitions')
-    definitions['SBayesConfig'] = schema
-
-    def template_literal(field: Field, type_annotation: type):
-        # If there is a default, use it:
-        if field.default is not None:
-            if isinstance(field.default, Enum):
-                return field.default.value
-            else:
-                return field.default
-
-        if field.default_factory and field.default_factory() is not None:
-            factory = field.default_factory
-            if isinstance(factory, type):
-                if issubclass(factory, BaseConfig):
-                    # if the default factory is itself a Config, return the template
-                    return template(factory)
-                if issubclass(factory, list) or issubclass(factory, dict):
-                    return factory()
-            else:
-                return str(factory())
-            # return field.default_factory()
-
-        # Otherwise it may be optional or required:
-        if 'NoneType' in str(type_annotation):
-            assert not field.required
-            return '<OPTIONAL>'
-        else:
-            assert field.required, field
-            return '<REQUIRED>'
-
-    def template(cfg: type(BaseConfig)) -> yaml.CommentedMap:
-        d = yaml.CommentedMap()
-        for key, field in cfg.__fields__.items():
-            if is_config_class(field.type_):
-                d[key] = template(field.type_)
-            else:
-                d[key] = template_literal(field, cfg.__annotations__[key])
-
-                docstring = cfg.get_attr_doc(key)
-                if docstring:
-                    d.yaml_add_eol_comment(key=key, comment=docstring, column=40)
-
-        if cfg.__doc__:
-            d.yaml_set_start_comment(cfg.__doc__)
-
-        return d
-
-    def get_indent(line: str) -> int:
-        return len(line) - len(str.lstrip(line))
-
-    d = template(SBayesConfig)
-    s = ruamel_yaml_dumps(d)
-    lines = []
-    for line in s.split('\n'):
-        if line.startswith('#'):
-            indent = ' ' * (4 + get_indent(lines[-1]))
-            line = indent + line
-        elif line.endswith(':'):
-            lines.append('')
-
-        lines.append(line)
-        # lines.append('')
-
-    yaml_str = '\n'.join(lines)
-    return yaml_str
-
-
-if __name__ == "__main__":
-    template_str = generate_template()
-    with open('config_template.yaml', 'w') as yaml_file:
-        yaml_file.write(template_str)
-

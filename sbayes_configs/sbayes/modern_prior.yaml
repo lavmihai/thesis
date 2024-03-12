@@ -10,14 +10,14 @@ mcmc:
         cluster_effect: 0
         confounding_effects: 0
         source: 12
-    init_objects_per_cluster: 5
+    init_objects_per_cluster: 10
     warmup:
         warmup_steps: 100_000
         warmup_chains: 30
     sample_from_prior: false
 
 model:
-    clusters: [9]
+    clusters: [2,3,4]
     sample_source: true
     confounders:
         - universal
@@ -29,10 +29,8 @@ model:
             max: 100
         geo:
             type: cost_based
-            parameters:
-                costs: ../../preprocessed_data/cost_matrix.csv
-                linkage: complete
-                rate: 5
+            costs: ../../preprocessed_data/cost_matrix.csv
+            rate: 10
         weights:
             type: uniform
         cluster_effect:
@@ -40,15 +38,16 @@ model:
         confounding_effects:
             universal:
                 <ALL>:
-                    type: dirichlet
-                    file: ../../preprocessed_data/universal_prior.json
+                    type: uniform
+                    # type: dirichlet
+                    # file: ../../preprocessed_data/universal_prior.json
             family:
                 <DEFAULT>:
                     type: uniform
 
 data:
   features: "../../preprocessed_data/modern_family.csv"
-  feature_states: "../../preprocessed_data/feature_states.csv"
+  feature_states: "../../preprocessed_data/feature_states_modern.csv"
 
 results:
     path: ../../sbayes_results

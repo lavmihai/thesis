@@ -2,29 +2,47 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import datetime
+import sys
 import time
 import csv
 import os
+import traceback
+import warnings
 from pathlib import Path
-from functools import lru_cache
 from math import sqrt, floor, ceil
 from itertools import combinations, permutations
-from typing import Sequence, Union
+from typing import Sequence, Union, Iterator
+
+import psutil
+from unidecode import unidecode
+from math import lgamma
 
 import numpy as np
 from numpy.typing import NDArray
-
+from scipy.optimize import linear_sum_assignment
 import pandas as pd
 import scipy
 import scipy.spatial as spatial
 from scipy.special import betaln, expit
 import scipy.stats as stats
 from scipy.sparse import csr_matrix
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
+from numba import jit, njit, float32, float64, int64, boolean, vectorize
 
 
-EPS = np.finfo(float).eps
+FLOAT_TYPE = np.float32
+INT_TYPE = np.int64
+EPS = np.finfo(FLOAT_TYPE).eps
+LOG_EPS = np.finfo(FLOAT_TYPE).min
+RNG = np.random.default_rng()
+
+
+@vectorize([float32(float32), float64(float64)])
+def gammaln(x):
+    """INSTEAD OF: from scipy.special import gammaln
+    numba.njit cannot handle the scipy.special function gammaln. Instead, we create a
+    vectorized version of math.lgamma (slightly slower, but still more efficient than not
+    using njit):"""
+    return lgamma(x)
 
 
 FAST_DIRICHLET = True
@@ -100,7 +118,7 @@ def bounding_box(points):
     return box
 
 
-def get_neighbours(cluster, already_in_cluster, adjacency_matrix):
+def get_neighbours(cluster, already_in_cluster, adjacency_matrix, indirection=0):
     """This function returns the neighbourhood of a cluster as given in the adjacency_matrix, excluding sites already
     belonging to this or any other cluster.
 
@@ -108,15 +126,21 @@ def get_neighbours(cluster, already_in_cluster, adjacency_matrix):
         cluster (np.array): The current cluster (boolean array)
         already_in_cluster (np.array): All sites already assigned to a cluster (boolean array)
         adjacency_matrix (np.array): The adjacency matrix of the sites (boolean)
+        indirection (int): Number of inbetween steps allowed for transitive neighborhood.
 
     Returns:
         np.array: The neighborhood of the cluster (boolean array)
     """
 
-    # Get all neighbors of the current zone, excluding all vertices that are already in a zone
+    # Get all neighbors of the current zone
+    reachable = adjacency_matrix.dot(cluster)
 
-    neighbours = np.logical_and(adjacency_matrix.dot(cluster), ~already_in_cluster)
-    return neighbours
+    # Get neighbors of neighbors for each level of indirection
+    for i in range(indirection):
+        reachable = adjacency_matrix.dot(reachable)
+
+    # Exclude all vertices that are already in a zone
+    return np.logical_and(reachable, ~already_in_cluster)
 
 
 def compute_delaunay(locations):
@@ -312,11 +336,14 @@ def encode_states(features_raw, feature_states):
 def normalize_str(s: str) -> str:
     if pd.isna(s):
         return s
-    return str.strip(s)
+    return str.strip(unidecode(s))
 
 
 def read_data_csv(csv_path: PathLike) -> pd.DataFrame:
-    return pd.read_csv(csv_path, dtype=str).applymap(normalize_str)
+    na_values = ["", " ", "\t", "  "]
+    data: pd.DataFrame = pd.read_csv(csv_path, na_values=na_values, keep_default_na=False, dtype=str)
+    data.columns = [unidecode(c) for c in data.columns]
+    return data.applymap(normalize_str)
 
 
 def read_costs_from_csv(file: str, logger=None):
@@ -943,44 +970,6 @@ def round_int(n, mode='up', offset=0):
     return n_rounded
 
 
-def colorline(ax, x, y, z=None, cmap=plt.get_cmap('copper'), norm=plt.Normalize(0.0, 1.0), linewidth=3):
-    """
-    Plot a colored line with coordinates x and y
-    Optionally specify colors in the array z
-    Optionally specify a colormap, a norm function and a line width
-    from: https://nbviewer.jupyter.org/github/dpsanders/matplotlib-examples/blob/master/colorline.ipynb
-    """
-
-    # Default colors equally spaced on [0,1]:
-    if z is None:
-        z = np.linspace(0.0, 1.0, len(x))
-
-    # Special case if a single number:
-    if not hasattr(z, "__iter__"):  # to check for numerical input -- this is a hack
-        z = np.array([z])
-
-    z = np.asarray(z)
-
-    def make_segments(x, y):
-        """
-        Create list of line segments from x and y coordinates, in the correct format for LineCollection:
-        an array of the form   numlines x (points per line) x 2 (x and y) array
-        """
-
-        points = np.array([x, y]).T.reshape(-1, 1, 2)
-        segments = np.concatenate([points[:-1], points[1:]], axis=1)
-
-        return segments
-
-    segments = make_segments(x, y)
-    lc = LineCollection(segments, array=z, cmap=cmap, norm=norm, linewidth=linewidth, alpha=1, zorder=1)
-
-    # ax = plt.gca()
-    ax.add_collection(lc)
-
-    return lc
-
-
 def normalize(x, axis=-1):
     """Normalize ´x´ s.t. the last axis sums up to 1.
 
@@ -992,14 +981,13 @@ def normalize(x, axis=-1):
          np.array: x with normalized s.t. the last axis sums to 1.
 
     == Usage ===
-    >>> normalize(np.ones((2, 4)))
-    array([[0.25, 0.25, 0.25, 0.25],
-           [0.25, 0.25, 0.25, 0.25]])
-    >>> normalize(np.ones((2, 4)), axis=0)
-    array([[0.5, 0.5, 0.5, 0.5],
-           [0.5, 0.5, 0.5, 0.5]])
+    >>> normalize(np.ones((2, 4))).tolist()
+    [[0.25, 0.25, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]]
+    >>> normalize(np.ones((2, 4)), axis=0).tolist()
+    [[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]]
     """
-    return x / np.sum(x, axis=axis, keepdims=True)
+    assert np.all(np.sum(x, axis=axis) > 0), np.min(x)
+    return (x / np.sum(x, axis=axis, keepdims=True)).astype(FLOAT_TYPE)
 
 
 def mle_weights(samples):
@@ -1096,12 +1084,15 @@ def get_max_size_list(start, end, n_total, k_groups):
     return max_size_list[0:n_total]
 
 
-def log_binom(n, k):
+def log_binom(
+    n: int | NDArray[int],
+    k: int | NDArray[int]
+) -> float | NDArray[float]:
     """Compute the logarithm of (n choose k), i.e. the binomial coefficient of `n` and `k`.
 
     Args:
-        n (int or np.array): Population size.
-        k (int or np.array): Sample size.
+        n: Population size.
+        k: Sample size.
     Returns:
         double: log(n choose k)
 
@@ -1114,18 +1105,25 @@ def log_binom(n, k):
     return -betaln(1 + n - k, 1 + k) - np.log(n + 1)
 
 
-def log_multinom(n, ks):
+def log_multinom(n: int, ks: Sequence[int]) -> float:
     """Compute the logarithm of (n choose k1,k2,...), i.e. the multinomial coefficient of
     `n` and the integers in the list `ks`. The sum of the sample sizes (the numbers in
      `ks`) may not exceed the population size (`n`).
 
     Args:
-        n (int): Population size.
-        ks (list[int] or np.array): Sample sizes
+        n: Population size.
+        ks: Sample sizes
 
     Returns:
-        double: log(n choose k1,k2,...)
+        The log multinomial coefficient: log(n choose k1,k2,...)
 
+    == Usage ===
+    >>> log_multinom(5, [1,1,1,1])  # == log(5!)
+    4.787491742782046
+    >>> log_multinom(13, [4])  # == log_binom(13, 4)
+    6.572282542694008
+    >>> log_multinom(13, [3, 2])  # == log_binom(13, 3) + log_binom(10, 2)
+    9.462654300590172
     """
     ks = np.asarray(ks)
     # assert np.all(ks >= 0)
@@ -1212,22 +1210,32 @@ def timeit(units='s'):
 
     return timeit_decorator
 
-@lru_cache(maxsize=128)
-def get_permutations(n: int) -> list[tuple[int]]:
-    return list(permutations(range(n)))
+
+def get_permutations(n: int) -> Iterator[tuple[int]]:
+    return permutations(range(n))
+
+
+# def get_best_permutation(
+#         areas: NDArray[bool],  # shape = (n_areas, n_sites)
+#         prev_area_sum: NDArray[int],  # shape = (n_areas, n_sites)
+# ) -> tuple[int]:
+#     """Return a permutation of areas that would align the areas in the new sample with previous ones."""
+#
+#     def clustering_agreement(p):
+#         """In how many sites does permutation `p` previous samples?"""
+#         return np.sum(prev_area_sum * areas[p, :])
+#
+#     all_permutations = get_permutations(areas.shape[0])
+#     return max(all_permutations, key=clustering_agreement)
 
 
 def get_best_permutation(
         areas: NDArray[bool],  # shape = (n_areas, n_sites)
         prev_area_sum: NDArray[int],  # shape = (n_areas, n_sites)
-) -> tuple[int]:
+) -> NDArray[int]:
     """Return a permutation of areas that would align the areas in the new sample with previous ones."""
-    def clustering_agreement(p):
-        """In how many sites does permutation `p` previous samples?"""
-        return np.sum(prev_area_sum * areas[p, :])
-
-    all_permutations = get_permutations(areas.shape[0])
-    return max(all_permutations, key=clustering_agreement)
+    cluster_agreement_matrix = np.matmul(prev_area_sum, areas.T)
+    return linear_sum_assignment(cluster_agreement_matrix, maximize=True)[1]
 
 
 if scipy.__version__ >= '1.8.0':
@@ -1322,6 +1330,190 @@ def categorical_log_probability(x: NDArray[bool], p: NDArray[float]) -> NDArray[
     return np.log(np.sum(x*p, axis=-1))
 
 
+def dirichlet_multinomial_logpdf(
+    counts: NDArray[int],        # shape: (n_features, n_states)
+    a: NDArray[float],      # shape: (n_features, n_states)
+) -> NDArray[float]:        # shape: (n_features)
+    """Calculate log-probability of DirichletMultinomial distribution for given Dirichlet
+    concentration parameter `a` and multinomial observations ´counts´.
+
+    Dirichlet-multinomial distribution:
+        https://en.wikipedia.org/wiki/Dirichlet-multinomial_distribution
+    Reference implementation (pymc3):
+        https://github.com/pymc-devs/pymc/blob/main/pymc/distributions/multivariate.py
+
+    == Usage ===
+    >>> round(dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.])), 6)
+    -1.386294
+    """
+    n = counts.sum(axis=-1)
+    sum_a = a.sum(axis=-1)
+    const = (gammaln(n + 1) + gammaln(sum_a)) - gammaln(n + sum_a)
+    series = np.where(a > 0, gammaln(counts + a) - (gammaln(counts + 1) + gammaln(a)), 0.)
+    return (const + series.sum(axis=-1)).astype(FLOAT_TYPE)
+
+
+@jit(nopython=True, fastmath=True, nogil=True)
+def dirichlet_categorical_logpdf(
+    counts: NDArray[int],   # shape: (n_features, n_states)
+    a: NDArray[float],      # shape: (n_features, n_states)
+) -> NDArray[float]:        # shape: (n_features)
+    """Calculate log-probability of DirichletMultinomial distribution for given Dirichlet
+    concentration parameter `a` and multinomial observations ´counts´.
+
+    Dirichlet-multinomial distribution:
+        https://en.wikipedia.org/wiki/Dirichlet-multinomial_distribution
+    Reference implementation (pymc3):
+        https://github.com/pymc-devs/pymc/blob/main/pymc/distributions/multivariate.py
+
+    == Usage ===
+    >>> round(dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.])), 6)
+    -1.386294
+    """
+    n = counts.sum(axis=-1)
+    sum_a = a.sum(axis=-1)
+    const = gammaln(sum_a) - gammaln(n + sum_a)
+    series = np.where(a > 0, gammaln(counts + a) - gammaln(a), 0.)
+    return (const + series.sum(axis=-1)).astype(FLOAT_TYPE)
+
+
+def get_along_axis(a: NDArray, index: int, axis: int):
+    """Get the index-th entry in the axis-th dimension of array a.
+    Examples:
+        >>> get_along_axis(a=np.arange(6).reshape((2,3)), index=2, axis=1)
+        array([2, 5])
+    """
+    I = [slice(None)] * a.ndim
+    I[axis] = index
+    return a[tuple(I)]
+
+
+def inner1d(x, y):
+    return np.einsum("...i,...i", x, y)
+
+
+def pmf_categorical_with_replacement(idxs: list[int], p: NDArray[float]):
+    prob = 0
+    for idxs_perm in map(list, permutations(idxs)):
+        prob += np.prod(p[idxs_perm]) / np.prod(1-np.cumsum(p[idxs_perm][:-1]))
+    return prob
+
+
+def trunc_exp_rv(low, high, scale, size):
+    rnd_cdf = np.random.uniform(stats.expon.cdf(x=low, scale=scale),
+                                stats.expon.cdf(x=high, scale=scale),
+                                size=size)
+    return stats.expon.ppf(q=rnd_cdf, scale=scale)
+
+
+def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
+    log = file if hasattr(file, 'write') else sys.stderr
+    # traceback.print_stack(file=log)
+    warning_trace = traceback.format_stack()
+    warning_trace_str = "".join(["\n\t|" + l for l in "".join(warning_trace).split("\n")])
+    message = str(message) + warning_trace_str
+    log.write(warnings.formatwarning(message, category, filename, lineno, line))
+
+
+def activate_verbose_warnings():
+    warnings.showwarning = warn_with_traceback
+
+
+def process_memory(pid: int = None, unit="B") -> int:
+    """Memory usage of the process with give `pid`,
+    or the current process if `pid` is None."""
+    mem_in_bytes = psutil.Process(pid).memory_info().rss
+    if unit == "B":
+        return mem_in_bytes
+    elif unit == "KB":
+        return mem_in_bytes >> 10
+    elif unit == "MB":
+        return mem_in_bytes >> 20
+    elif unit == "GB":
+        return mem_in_bytes >> 30
+    elif unit == "TB":
+        return mem_in_bytes >> 40
+    else:
+        raise ValueError(f"Unknown unit `{unit}`")
+
+
+def heat_binary_probability(p: float, temperature: float) -> float:
+    """Take the probability of a binary event to the power of (1/temperature)
+    and renormalize over a positive and negative outcome.
+
+    == Usage ===
+    >>> heat_binary_probability(0.5, 2)
+    0.5
+    >>> round(heat_binary_probability(1/3, 0.5), 6)
+    0.2
+    """
+    pow = 1 / temperature
+    p_pow = p ** pow
+    return p_pow / (p_pow + (1 - p)**pow)
+
+
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
+
+    # def sample_diri_mult_pdf(counts, a, S=10000):
+    #     n = np.sum(counts)
+    #     p = np.random.dirichlet(a, size=S)
+    #     # lh_per_observation_and_sample = (p @ t.T)
+    #     # lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
+    #     lh = stats.multinomial.pmf(x=counts, n=n, p=p)
+    #     return lh.mean()
+    #
+    # def sample_diri_cat_pdf(t, a, S=10000):
+    #     print(S)
+    #     p = np.random.dirichlet(a, size=S)
+    #     lh_per_observation_and_sample = (p @ t.T)
+    #     lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
+    #     return lh_per_sample.mean()
+    #
+    # a = np.array([0.3, 0.9, 1.5, 0.0])
+    # t = np.array([
+    #     [1, 0, 0, 0],
+    #     [0, 1, 0, 0],
+    #     [0, 1, 0, 0],
+    #     [0, 0, 1, 0],
+    #     [0, 0, 1, 0],
+    # ], dtype=bool)
+    # k = t.sum(axis=0)
+    # p = normalize(a)
+    # counts = np.sum(t, axis=0)
+    #
+    # # print(p[None, :][[0, 0, 0, 0, 0, 0]])
+    #
+    # # s_values = np.array([2**(2*i) for i in range(2, 16)])
+    # # s_values = np.arange(5_000, 1_000_000, 5_000)
+    # s_values = np.arange(100, 2_000, 100)**2
+    # pdf_sampled = [sample_diri_cat_pdf(t[:, :-1], a[:-1], S=S) for S in s_values]
+    # print(pdf_sampled)
+    #
+    # # pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
+    # # pdf_exact = np.exp(dirichlet_multinomial_logpdf(counts, a))
+    # pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
+    # print(pdf_exact)
+    # pdf_exact_2 = np.exp(dirichlet_categorical_logpdf(counts[:-1], a[:-1]))
+    # print(pdf_exact_2)
+    #
+    # import matplotlib.pyplot as plt
+    # plt.scatter(s_values, pdf_sampled, s=10)
+    # plt.axhline(pdf_exact, color='darkorange', zorder=2)
+    # # plt.ylim(0.00286, 0.00289)
+    # plt.show()
+    # #
+    # # exit()
+    # # #################################################
+    # #
+    # # pdf_sampled = sample_diri_mult_pdf(k, a)
+    # # print(pdf_sampled)
+    # #
+    # # pdf_exact = dirichlet_multinomial_logpdf(k, a)
+    # # print(np.exp(pdf_exact))
+    # #
+    # # import tensorflow_probability as tfp
+    # # print(
+    # #     tfp.distributions.DirichletMultinomial(4, a).prob(k)
+    # # )

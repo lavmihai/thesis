@@ -129,9 +129,6 @@ class Features:
         data: pd.DataFrame,
         feature_states: pd.DataFrame,
     ) -> S:
-        common_feature_names = np.array(list(set(feature_states.columns.to_numpy()).intersection(set(data.columns.to_numpy()))))
-        feature_states = feature_states.loc[:,common_feature_names]
-
         feature_data = data.loc[:, feature_states.columns]
         features_dict, na_number = encode_states(feature_data, feature_states)
         features_dict["names"] = feature_states.columns.to_numpy()
@@ -144,7 +141,7 @@ class Confounder:
     name: str
     group_assignment: NDArray[bool]         # shape: (n_groups, n_objects)
     group_names: NDArray[GroupName]         # shape: (n_groups,)
-    feature_counts: NDArray[int] = None    # shape: (n_groups, n_features, n_states)
+    has_universal_prior: bool = False
 
     def __getitem__(self, key) -> str | NDArray:
         if key == "names":
@@ -165,7 +162,6 @@ class Confounder:
         cls: Type[S],
         data: pd.DataFrame,
         confounder_name: ConfounderName,
-        features: Features | None = None,
     ) -> S:
         n_objects = data.shape[0]
 
@@ -181,21 +177,10 @@ class Confounder:
             for i_g, name_g in enumerate(group_names):
                 group_assignment[i_g, np.where(group_names_by_site == name_g)] = True
 
-        if features is not None:
-            n_groups = len(group_names)
-            feature_counts = np.zeros((n_groups, features.n_features, features.n_states), dtype=int)
-            for i_g, g in enumerate(group_assignment):
-                feature_counts[i_g] = np.sum(features.values[g], axis=0)
-
-        else:
-            feature_counts = None
-            approximate_likelihood = None
-
         return cls(
             name=confounder_name,
             group_assignment=group_assignment,
             group_names=group_names,
-            feature_counts=feature_counts,
         )
 
 
@@ -321,7 +306,7 @@ def read_features_from_csv(
     objects = Objects.from_dataframe(data)
     confounders = OrderedDict()
     for c in confounder_names:
-        confounders[c] = Confounder.from_dataframe(data=data, confounder_name=c, features=features)
+        confounders[c] = Confounder.from_dataframe(data=data, confounder_name=c)
 
     if logger:
         logger.info(

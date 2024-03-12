@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import TextIO, Optional, Callable
+import logging
+from pathlib import Path
+from typing import TextIO, Optional
 from abc import ABC, abstractmethod
 
 import numpy as np
@@ -9,7 +10,7 @@ import numpy.typing as npt
 import tables
 
 from sbayes.load_data import Data
-from sbayes.sampling.conditionals import conditional_effect_sample, likelihood_per_component
+from sbayes.sampling.conditionals import conditional_effect_sample, likelihood_per_component_exact
 from sbayes.sampling.operators import Operator
 from sbayes.util import format_cluster_columns, get_best_permutation
 from sbayes.model import Model
@@ -24,13 +25,16 @@ class ResultsLogger(ABC):
         path: str,
         data: Data,
         model: Model,
+        resume: bool,
     ):
-        self.path: str = path
+        self.path: Path = Path(path)
         self.data: Data = data
         self.model: Model = model.__copy__()
 
         self.file: Optional[TextIO] = None
         self.column_names: Optional[list] = None
+
+        self.resume = resume
 
     @abstractmethod
     def write_header(self, sample: Sample):
@@ -47,12 +51,13 @@ class ResultsLogger(ABC):
         self._write_sample(sample)
 
     def open(self):
-        self.file = open(self.path, "w", buffering=1)
+        self.file = open(self.path, "a" if self.resume else "w", buffering=1)
         # ´buffering=1´ activates line-buffering, i.e. flushing to file after each line
 
     def close(self):
-        self.file.close()
-        self.file = None
+        if self.file:
+            self.file.close()
+            self.file = None
 
 
 class ParametersCSVLogger(ResultsLogger):
@@ -65,21 +70,20 @@ class ParametersCSVLogger(ResultsLogger):
         self,
         *args,
         log_contribution_per_cluster: bool = False,
-        float_format: str = "%.12g",
+        float_format: str = "%.8g",
         match_clusters: bool = True,
-        log_source: bool = False
+        log_source: bool = False,
+        log_sample_id: bool = True,
+        **kwargs,
     ):
-        super().__init__(*args)
+        super().__init__(*args, **kwargs)
         self.float_format = float_format
         self.log_contribution_per_cluster = log_contribution_per_cluster
         self.match_clusters = match_clusters
-        self.cluster_sum: Optional[npt.NDArray[int]] = None
         self.log_source = log_source
+        self.log_sample_id = log_sample_id
 
-        # For logging single cluster likelihood values we do not want to use the sampled
-        # source arrays
-        self.model.sample_source = False
-        self.model.prior.sample_source = False
+        self.cluster_sum = np.zeros((self.model.shapes.n_clusters, self.model.shapes.n_sites), dtype=int)
 
     def write_header(self, sample: Sample):
         feature_names = self.data.features.names
@@ -91,8 +95,8 @@ class ParametersCSVLogger(ResultsLogger):
         if sample.n_clusters <= 1:
             self.match_clusters = False
 
-        # Initialize cluster_sum array for matching
-        self.cluster_sum = np.zeros((sample.n_clusters, sample.n_objects), dtype=int)
+        # # Initialize cluster_sum array for matching
+        # self.cluster_sum = np.zeros((sample.n_clusters, sample.n_objects), dtype=int)
 
         # Cluster sizes
         for i in range(sample.n_clusters):
@@ -139,11 +143,15 @@ class ParametersCSVLogger(ResultsLogger):
         # Prior column
         column_names += ["cluster_size_prior", "geo_prior", "source_prior", "weights_prior"]
 
+        if self.log_sample_id:
+            column_names += ["sample_id"]
+
         # Store the column names in an attribute (important to keep order consistent)
         self.column_names = column_names
 
         # Write the column names to the logger file
-        self.file.write("\t".join(column_names) + "\n")
+        if not self.resume:
+            self.file.write("\t".join(column_names) + "\n")
 
     def _write_sample(self, sample: Sample):
         features = self.data.features
@@ -205,16 +213,12 @@ class ParametersCSVLogger(ResultsLogger):
 
         # Confounding effects
         for i_conf, conf in enumerate(self.data.confounders.values(), start=1):
-
-            if False:  # TODO Check whether conf is sampled, once that option is available
-                conf_effect = sample.confounding_effects[conf.name].value
-            else:
-                conf_effect = conditional_effect_sample(
-                    features=features.values,
-                    is_source_group=conf.group_assignment[..., np.newaxis] & sample.source.value[np.newaxis, ..., i_conf],
-                    applicable_states=features.states,
-                    prior_counts=self.model.prior.prior_confounding_effects[conf.name].concentration_array(sample),
-                )
+            conf_effect = conditional_effect_sample(
+                features=features.values,
+                is_source_group=conf.group_assignment[..., np.newaxis] & sample.source.value[np.newaxis, ..., i_conf],
+                applicable_states=features.states,
+                prior_counts=self.model.prior.prior_confounding_effects[conf.name].concentration_array(sample),
+            )
 
             for i_g, g in enumerate(conf.group_names):
                 for i_f, f in enumerate(features.names):
@@ -246,9 +250,12 @@ class ParametersCSVLogger(ResultsLogger):
                 row[f"post_a{i}"] = lh + prior
 
         row["cluster_size_prior"] = sample.cache.cluster_size_prior.value
-        row["geo_prior"] = sample.cache.geo_prior.value
-        row["source_prior"] = sample.cache.source_prior.value
+        row["geo_prior"] = sample.cache.geo_prior.value.sum()
+        row["source_prior"] = sample.cache.source_prior.value.sum()
         row["weights_prior"] = sample.cache.weights_prior.value
+
+        if self.log_sample_id:
+            row["sample_id"] = sample.chain
 
         row_str = "\t".join([self.float_format % row[k] for k in self.column_names])
         self.file.write(row_str + "\n")
@@ -263,8 +270,9 @@ class ClustersLogger(ResultsLogger):
         self,
         *args,
         match_clusters: bool = True,
+        **kwargs,
     ):
-        super().__init__(*args)
+        super().__init__(*args, **kwargs)
         self.match_clusters = match_clusters
         self.cluster_sum: Optional[npt.NDArray[int]] = None
 
@@ -302,25 +310,52 @@ class LikelihoodLogger(ResultsLogger):
         super().__init__(*args, **kwargs)
 
     def open(self):
-        self.file = tables.open_file(self.path, mode="w")
+        if self.resume:
+            try:
+                self.file = tables.open_file(self.path, mode="a")
+
+            except tables.exceptions.HDF5ExtError as e:
+                logging.warning(f"Could not append to existing likelihood file '{self.path.name}' ({type(e).__name__})."
+                                f" Overwriting previously likelihood values instead.")
+                # Set resume to False and open again
+                self.resume = False
+                self.open()
+
+        else:
+            self.file = tables.open_file(self.path, mode="w")
 
     def write_header(self, sample: Sample):
-        # Create the likelihood array
-        self.logged_likelihood_array = self.file.create_earray(
-            where=self.file.root,
-            name="likelihood",
-            atom=tables.Float32Col(),
-            filters=tables.Filters(
-                complevel=9, complib="blosc:zlib", bitshuffle=True, fletcher32=True
-            ),
-            shape=(0, sample.n_objects * sample.n_features),
-        )
+        if self.resume:
+            self.logged_likelihood_array = self.file.root.likelihood
+        else:
+            # Create the likelihood array
+            self.logged_likelihood_array = self.file.create_earray(
+                where=self.file.root,
+                name="likelihood",
+                atom=tables.Float32Col(),
+                filters=tables.Filters(
+                    complevel=9, complib="blosc:zlib", bitshuffle=True, fletcher32=True
+                ),
+                shape=(0, sample.n_objects * sample.n_features),
+            )
+
+            na_values = self.model.data.features.na_values
+            na_array = self.file.create_carray(
+                where=self.file.root,
+                name="na_values",
+                obj=na_values.ravel(),
+                atom=tables.BoolCol(),
+                filters=tables.Filters(complevel=9, fletcher32=True),
+                shape=(sample.n_objects * sample.n_features, ),
+            )
+            na_array.close()
 
     def _write_sample(self, sample: Sample):
-        lh_per_comp = likelihood_per_component(model=self.model, sample=sample)
         weights = update_weights(sample)
-        lh = np.sum(weights * lh_per_comp, axis=2).ravel()
+        lh_per_comp_exact = likelihood_per_component_exact(model=self.model, sample=sample)
+        lh = np.sum(weights * lh_per_comp_exact, axis=2).ravel()
         self.logged_likelihood_array.append(lh[None, ...])
+        self.file.flush()
 
 
 class OperatorStatsLogger(ResultsLogger):
@@ -329,13 +364,14 @@ class OperatorStatsLogger(ResultsLogger):
      on each MCMC operator. The file is updated at each logged sample."""
 
     COLUMNS: dict[str, int] = {
-        "OPERATOR": 30,
+        "OPERATOR": 27,
         "ACCEPTS": 8,
         "REJECTS": 8,
         "TOTAL": 8,
         "ACCEPT-RATE": 11,
-        "STEP-TIME": 11,
         "STEP-SIZE": 11,
+        "STEP-TIME": 11,
+        "NEXT STEP-TIME": 15,
         "PARAMETERS": 0,
     }
 
@@ -357,15 +393,7 @@ class OperatorStatsLogger(ResultsLogger):
     @classmethod
     def get_log_message_header(cls) -> str:
         headers = [column.ljust(width) for column, width in cls.COLUMNS.items()]
-        return '\t'.join(headers)
-
-        # name_header = str.ljust('OPERATOR', cls.COL_WIDTHS[0])
-        # acc_header = str.ljust('ACCEPTS', cls.COL_WIDTHS[1])
-        # rej_header = str.ljust('REJECTS', cls.COL_WIDTHS[2])
-        # total_header = str.ljust('TOTAL', cls.COL_WIDTHS[3])
-        # acc_rate_header = str.ljust('ACC. RATE', cls.COL_WIDTHS[4])
-        # parameters_header = str.ljust('PARAMETERS', cls.COL_WIDTHS[5])
-        # return '\t'.join([name_header, acc_header, rej_header, total_header, acc_rate_header])
+        return ' '.join(headers)
 
     @classmethod
     def get_log_message_row(cls, operator: Operator) -> str:
@@ -378,14 +406,13 @@ class OperatorStatsLogger(ResultsLogger):
         rej_str = str(operator.rejects).ljust(cls.COLUMNS["REJECTS"])
         total_str = str(operator.total).ljust(cls.COLUMNS["TOTAL"])
         acc_rate_str = f"{operator.acceptance_rate:.2%}".ljust(cls.COLUMNS["ACCEPT-RATE"])
+        step_size_str_raw = f"{np.mean(operator.step_sizes):.2f}" if operator.step_sizes else "-"
+        step_size_str = step_size_str_raw.ljust(cls.COLUMNS["STEP-SIZE"])
         step_time_str = f"{1000 * np.mean(operator.step_times):.2f} ms".ljust(cls.COLUMNS["STEP-TIME"])
-        if operator.step_sizes:
-            step_size_str = f"{np.mean(operator.step_sizes):.2f}".ljust(cls.COLUMNS["STEP-SIZE"])
-        else:
-            step_size_str = "-"
+        next_step_time_str = f"{1000 * np.mean(operator.next_step_times):.2f} ms".ljust(cls.COLUMNS["NEXT STEP-TIME"])
         paramters_str = operator.get_parameters_string().ljust(cls.COLUMNS["PARAMETERS"])
 
-        return '\t'.join([name_str, acc_str, rej_str, total_str, acc_rate_str, step_time_str, step_size_str, paramters_str])
+        return ' '.join([name_str, acc_str, rej_str, total_str, acc_rate_str, step_size_str, step_time_str, next_step_time_str, paramters_str])
 
     def write_header(self, sample: Sample):
         pass

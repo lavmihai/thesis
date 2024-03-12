@@ -1,6 +1,6 @@
 mcmc:
-    steps: 600_000
-    samples: 20_000
+    steps: 10_000
+    samples: 200
     runs: 1
     grow_to_adjacent: 0.85
     operators:
@@ -16,7 +16,6 @@ mcmc:
     sample_from_prior: false
 model:
     clusters: 1
-    sample_source: true
     confounders:
         - universal
         - family

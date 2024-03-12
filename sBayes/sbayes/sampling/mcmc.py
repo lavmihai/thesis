@@ -1,28 +1,39 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+
+from datetime import timedelta
+
+import psutil
 import logging
 import math
-from abc import ABC, abstractmethod
 import random as _random
 import time as _time
+from typing import Protocol
 
 import numpy as _np
-from copy import copy
+from copy import copy, deepcopy
 import typing as typ
 
 import numpy as np
 
 from sbayes.model import Model
 from sbayes.load_data import Data
-from sbayes.sampling.loggers import ResultsLogger, OperatorStatsLogger
-from sbayes.sampling.operators import Operator
+from sbayes.sampling.loggers import ResultsLogger, OperatorStatsLogger, ClustersLogger
+from sbayes.sampling.operators import Operator, get_operator_schedule
 from sbayes.config.config import OperatorsConfig
 
 from sbayes.sampling.state import Sample
+from sbayes.util import process_memory
 
 
-class MCMC(ABC):
+class Initializer(Protocol):
+
+    def generate_sample(self, c: int = 0) -> Sample:
+        ...
+
+
+class MCMC:
 
     """Base-class for MCMC samplers for generative model. Instantiable sub-classes have to implement
     some methods, like propose_step() and likelihood().
@@ -40,12 +51,10 @@ class MCMC(ABC):
             operators: OperatorsConfig,
             sample_loggers: typ.List[ResultsLogger],
             n_chains: int = 1,
-            mc3: bool = False,
-            swap_period: int = None,
-            chain_swaps: int = None,
             sample_from_prior: bool = False,
             show_screen_log: bool = False,
             logger: logging.Logger = None,
+            screen_log_interval: int = 1000,
             **kwargs
     ):
         # The model and data defining the posterior distribution
@@ -71,6 +80,7 @@ class MCMC(ABC):
         self._prior = _np.full(self.n_chains, -_np.inf)
 
         self.show_screen_log = show_screen_log
+        self.screen_log_interval = screen_log_interval
         self.t_start = None
 
         if logger is None:
@@ -82,6 +92,9 @@ class MCMC(ABC):
         for logger in self.sample_loggers:
             if isinstance(logger, OperatorStatsLogger):
                 logger.operators = list(self.callable_operators.values())
+
+        self.i_step_start = 0
+        self.previous_operator = None
 
     def prior(self, sample, chain):
         """Compute the (log) prior of a sample.
@@ -124,16 +137,6 @@ class MCMC(ABC):
         sample.last_lh = log_lh
         return log_lh
 
-    @abstractmethod
-    def generate_initial_sample(self, c=0):
-        """Generate an initial sample from which the run should be started.
-        Preferably in high density areas.
-        Returns:
-            SampleType: Initial sample.
-        """
-        pass
-
-    @abstractmethod
     def get_operators(self, operators: OperatorsConfig) -> dict[str, Operator]:
         """Get relevant operators and weights for proposing MCMC update steps
 
@@ -142,15 +145,34 @@ class MCMC(ABC):
         Returns:
             The operator objects with a proposal function and weights
         """
+        return get_operator_schedule(
+            operators_config=operators,
+            model=self.model,
+            data=self.data,
+            sample_from_prior=self.sample_from_prior
+        )
 
-    def generate_samples(self, n_steps, n_samples, warm_up=False, warm_up_steps=None):
+    def generate_samples(
+        self,
+        n_steps: int,
+        n_samples: int,
+        initial_sample: Sample | None = None,
+        initializer_logger: ClustersLogger | None = None,
+        initializer: Initializer | None = None,
+        warm_up: bool = False,
+        warm_up_steps: int | None = None,
+        log_memory_usage: bool = True,
+    ) -> Sample:
         """Run the MCMC sampling procedure with Metropolis Hastings rejection step and options for multiple chains. \
         Samples are returned, statistics saved in self.statistics.
         Args:
-            n_steps (int): The number of steps taken by the sampler (without burn-in steps)
-            n_samples (int): The number of samples
-            warm_up (bool): Warm-up run or real sampling?
-            warm_up_steps (int): Number of warm-up steps
+            n_steps: The number of steps taken by the sampler (without burn-in steps)
+            n_samples: The number of samples
+            initial_sample: The starting sample
+            initializer: Initializer object for creating initial_sample (required if initial_sample is not provided)
+            warm_up: Warm-up run or real sampling?
+            warm_up_steps: Number of warm-up steps
+            log_memory_usage: print memory usage in the logger?
         Returns:
             list: The generated samples
         """
@@ -158,57 +180,61 @@ class MCMC(ABC):
         # Generate initial samples
         sample = []
         for c in self.chain_idx:
-            sample.append(
-                self.generate_initial_sample(c)
-            )
+            if initial_sample is None:
+                if initializer is None:
+                    raise AttributeError("Either initial_sample or initializer needs to be defined.")
+                t_start_initialize = _time.time()
+                init_sample_c = initializer.generate_sample(c)
+                self.logger.info(f"Initialization finished after {(_time.time() - t_start_initialize):.1f} seconds")
+            else:
+                init_sample_c = deepcopy(initial_sample)
+                init_sample_c.chain = c
+
+            sample.append(init_sample_c)
 
             # Compute the (log)-likelihood and the prior for each sample
-            self._ll[c] = self.likelihood(sample[c], c)
-            self._prior[c] = self.prior(sample[c], c)
+            self._ll[c] = self.likelihood(init_sample_c, c)
+            self._prior[c] = self.prior(init_sample_c, c)
 
-        # # Probability of operators is different if there are zero clusters
-        # if self.n_clusters == 0:
-        #
-        #     operator_names = [f.__name__ for f in self.fn_operators]
-        #     cluster_op = [operator_names.index('alter_cluster_effect'), operator_names.index('shrink_cluster'),
-        #                   operator_names.index('grow_cluster'), operator_names.index('swap_cluster')]
-        #
-        #     for op in cluster_op:
-        #         self.p_operators[op] = 0.
-        #     self.p_operators = [p / sum(self.p_operators) for p in self.p_operators]
+            if log_memory_usage:
+                self.print_memory_usage()
 
         self.t_start = _time.time()
 
         # Function is called in warmup-mode
         if warm_up:
-            print("Tuning parameters in warm-up...")
+            self.logger.info("Tuning parameters in warm-up...")
             for i_warmup in range(warm_up_steps):
                 warmup_progress = (i_warmup / warm_up_steps) * 100
                 if warmup_progress % 10 == 0:
-                    print("warm-up", int(warmup_progress), "%")
+                    self.logger.info(f"warm-up {int(warmup_progress)}%")
+
+                    if log_memory_usage:
+                        self.print_memory_usage()
+
                 for c in self.chain_idx:
                     sample[c] = self.step(sample[c], c)
                     sample[c].i_step = i_warmup
 
             self.logger.info(f"Warm-up finished after {(_time.time() - self.t_start):.1f} seconds")
 
-            # For the last sample find the best chain (highest posterior)
-            posterior_samples = [self._ll[c] + self._prior[c] for c in self.chain_idx]
-            best_chain = posterior_samples.index(max(posterior_samples))
+            best_chain = np.argmax(self._ll)
+            best_ll = self._ll[best_chain]
 
-            self.logger.info(f"Starting state taken from warmup chain {best_chain} with "
-                             f"posterior density {posterior_samples[best_chain]} (posterior "
-                             f"densities of all chains: {posterior_samples}).")
+            self.logger.info(
+                f"Starting state taken from warmup chain {best_chain} with log-likelihood"
+                f" {best_ll} (log-lokelihoods of all chains: {list(self._ll)})."
+            )
 
             # Return the best sample
             return sample[best_chain]
 
         # Function is called to sample from posterior
         else:
-            print("Sampling from posterior...")
+            self.logger.info("Sampling from posterior...")
             steps_per_sample = int(_np.ceil(n_steps / n_samples))
-
-            for i_step in range(n_steps):
+            self.i_step_start = sample[0].i_step
+            for i_step in range(self.i_step_start, n_steps):
                 # Generate samples for each chain
                 for c in self.chain_idx:
                     sample[c] = self.step(sample[c], c)
@@ -221,23 +247,27 @@ class MCMC(ABC):
                         logger.write_sample(sample[self.chain_idx[0]])
 
                 # Print work status and likelihood at fixed intervals
-                if (i_step+1) % 1000 == 0:
-                    self.print_screen_log(i_step+1, sample)
+                if (i_step+1) % self.screen_log_interval == 0:
+                    self.print_screen_log(i_step + 1, sample)
 
-        # Close files of all sample_loggers
-        for logger in self.sample_loggers:
-            logger.close()
+                # Print memory usage
+                if log_memory_usage and (i_step+1) % 10_000 == 0:  # TODO make settable in config file
+                    self.print_memory_usage()
 
-        self.logger.info(f"MCMC run finished after {(_time.time() - self.t_start):.1f} seconds")
+            # Close files of all sample_loggers
+            for logger in self.sample_loggers:
+                logger.close()
+
+            self.logger.info(f"MCMC run finished after {(_time.time() - self.t_start):.1f} seconds")
+
+            return sample[0]
 
     def choose_operator(self) -> Operator:
         # Randomly choose one operator to propose a new sample
         step_weights = [w.weight for w in self.callable_operators.values()]
         possible_steps = list(self.callable_operators.keys())
         operator_name = _np.random.choice(possible_steps, 1, p=step_weights)[0]
-
         operator = self.callable_operators[operator_name]
-        operator['name'] = operator_name
         return operator
 
     def step(self, sample, c):
@@ -249,12 +279,11 @@ class MCMC(ABC):
             c(int): the current chain
         Returns:
             Sample: A Sample object consisting of clusters, weights and source array"""
-        operator = self.choose_operator()
-        step_function = operator['function']
-
         step_time_start = _time.time()
 
-        candidate, log_q, log_q_back = step_function(sample, c=c)
+        # Chose and apply an MCMC operator
+        operator = self.choose_operator()
+        candidate, log_q, log_q_back = operator.function(sample, c=c)
 
         # Compute the log-likelihood of the candidate
         ll_candidate = self.likelihood(candidate, c)
@@ -280,12 +309,21 @@ class MCMC(ABC):
         step_time = _time.time() - step_time_start
 
         if accept:
-            operator.register_accept(step_time=step_time, sample_old=sample, sample_new=candidate)
+            operator.register_accept(step_time=step_time, sample_old=sample, sample_new=candidate, prev_operator=self.previous_operator)
             sample = candidate
             self._ll[c] = ll_candidate
             self._prior[c] = prior_candidate
         else:
-            operator.register_reject(step_time=step_time)
+            operator.register_reject(step_time=step_time, prev_operator=self.previous_operator)
+
+        self.previous_operator = operator
+
+        if not np.all(np.isfinite(self._ll)):
+            raise ValueError(f'Non finite log-likelihood ({self._ll}) was accepted '
+                             f'after MCMC operator {operator.operator_name}.')
+        if not np.all(np.isfinite(self._prior)):
+            raise ValueError(f'Non finite log-prior ({self._prior}) was accepted '
+                             f'after MCMC operator {operator.operator_name}.')
 
         return sample
 
@@ -317,14 +355,10 @@ class MCMC(ABC):
         likelihood = self.likelihood(sample[self.chain_idx[0]], self.chain_idx[0])
         likelihood_str = f'log-likelihood:  {likelihood:<19.2f}'
 
-        time_per_million = (_time.time() - self.t_start) / (i_step + 1) * 1000000
-        time_str = f'{time_per_million:.0f} seconds / million steps'
+        time_per_million = (_time.time() - self.t_start) / (i_step + 1 - self.i_step_start) * 1_000_000
+        time_str = f'{timedelta(seconds=int(time_per_million))} / million steps'
 
-        print(i_step_str + likelihood_str + time_str)
+        self.logger.info(i_step_str + likelihood_str + time_str)
 
-
-
-
-
-
-
+    def print_memory_usage(self):
+        self.logger.info(f"Memory usage: {process_memory(unit='MB')} MB")

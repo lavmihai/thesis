@@ -2,27 +2,47 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 import datetime
+import sys
 import time
 import csv
 import os
+import traceback
+import warnings
 from pathlib import Path
 from math import sqrt, floor, ceil
 from itertools import combinations, permutations
 from typing import Sequence, Union, Iterator
 
+import psutil
+from unidecode import unidecode
+from math import lgamma
+
 import numpy as np
 from numpy.typing import NDArray
 from scipy.optimize import linear_sum_assignment
-
 import pandas as pd
 import scipy
 import scipy.spatial as spatial
-from scipy.special import betaln, expit, gammaln
+from scipy.special import betaln, expit
 import scipy.stats as stats
 from scipy.sparse import csr_matrix
+from numba import jit, njit, float32, float64, int64, boolean, vectorize
 
 
-EPS = np.finfo(float).eps
+FLOAT_TYPE = np.float32
+INT_TYPE = np.int64
+EPS = np.finfo(FLOAT_TYPE).eps
+LOG_EPS = np.finfo(FLOAT_TYPE).min
+RNG = np.random.default_rng()
+
+
+@vectorize([float32(float32), float64(float64)])
+def gammaln(x):
+    """INSTEAD OF: from scipy.special import gammaln
+    numba.njit cannot handle the scipy.special function gammaln. Instead, we create a
+    vectorized version of math.lgamma (slightly slower, but still more efficient than not
+    using njit):"""
+    return lgamma(x)
 
 
 FAST_DIRICHLET = True
@@ -98,7 +118,7 @@ def bounding_box(points):
     return box
 
 
-def get_neighbours(cluster, already_in_cluster, adjacency_matrix):
+def get_neighbours(cluster, already_in_cluster, adjacency_matrix, indirection=0):
     """This function returns the neighbourhood of a cluster as given in the adjacency_matrix, excluding sites already
     belonging to this or any other cluster.
 
@@ -106,15 +126,21 @@ def get_neighbours(cluster, already_in_cluster, adjacency_matrix):
         cluster (np.array): The current cluster (boolean array)
         already_in_cluster (np.array): All sites already assigned to a cluster (boolean array)
         adjacency_matrix (np.array): The adjacency matrix of the sites (boolean)
+        indirection (int): Number of inbetween steps allowed for transitive neighborhood.
 
     Returns:
         np.array: The neighborhood of the cluster (boolean array)
     """
 
-    # Get all neighbors of the current zone, excluding all vertices that are already in a zone
+    # Get all neighbors of the current zone
+    reachable = adjacency_matrix.dot(cluster)
 
-    neighbours = np.logical_and(adjacency_matrix.dot(cluster), ~already_in_cluster)
-    return neighbours
+    # Get neighbors of neighbors for each level of indirection
+    for i in range(indirection):
+        reachable = adjacency_matrix.dot(reachable)
+
+    # Exclude all vertices that are already in a zone
+    return np.logical_and(reachable, ~already_in_cluster)
 
 
 def compute_delaunay(locations):
@@ -253,11 +279,6 @@ def range_like(a):
 
 # Encoding
 def encode_states(features_raw, feature_states):
-    # print(features_raw.iloc[0])
-    # print()
-    # print(feature_states.iloc[0])
-    # exit()
-
     # Define shapes
     n_states, n_features = feature_states.shape
     features_bin_shape = features_raw.shape + (n_states,)
@@ -290,11 +311,8 @@ def encode_states(features_raw, feature_states):
         f_raw = features_raw[f_name]
         f_enc = f_raw.map(ext_to_int)
         if not (set(f_raw.dropna()).issubset(set(s_ext))):
-            print("ERROR: All states should map to an encoding!")
-            print(f"Feature: {f_name}")
-            print(f"Values: {set(f_raw.dropna()) - set(s_ext)}")
+            print(set(f_raw.dropna()) - set(s_ext))
             print(s_ext)
-            exit()
         assert set(f_raw.dropna()).issubset(set(s_ext))  # All states should map to an encoding
 
         # Binarize features
@@ -318,12 +336,13 @@ def encode_states(features_raw, feature_states):
 def normalize_str(s: str) -> str:
     if pd.isna(s):
         return s
-    return str.strip(s)
+    return str.strip(unidecode(s))
 
 
 def read_data_csv(csv_path: PathLike) -> pd.DataFrame:
     na_values = ["", " ", "\t", "  "]
-    data = pd.read_csv(csv_path, na_values=na_values, keep_default_na=False, dtype=str)
+    data: pd.DataFrame = pd.read_csv(csv_path, na_values=na_values, keep_default_na=False, dtype=str)
+    data.columns = [unidecode(c) for c in data.columns]
     return data.applymap(normalize_str)
 
 
@@ -962,15 +981,13 @@ def normalize(x, axis=-1):
          np.array: x with normalized s.t. the last axis sums to 1.
 
     == Usage ===
-    >>> normalize(np.ones((2, 4)))
-    array([[0.25, 0.25, 0.25, 0.25],
-           [0.25, 0.25, 0.25, 0.25]])
-    >>> normalize(np.ones((2, 4)), axis=0)
-    array([[0.5, 0.5, 0.5, 0.5],
-           [0.5, 0.5, 0.5, 0.5]])
+    >>> normalize(np.ones((2, 4))).tolist()
+    [[0.25, 0.25, 0.25, 0.25], [0.25, 0.25, 0.25, 0.25]]
+    >>> normalize(np.ones((2, 4)), axis=0).tolist()
+    [[0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5]]
     """
-    assert np.all(np.sum(x, axis=axis) > 0)
-    return x / np.sum(x, axis=axis, keepdims=True)
+    assert np.all(np.sum(x, axis=axis) > 0), np.min(x)
+    return (x / np.sum(x, axis=axis, keepdims=True)).astype(FLOAT_TYPE)
 
 
 def mle_weights(samples):
@@ -1326,22 +1343,17 @@ def dirichlet_multinomial_logpdf(
         https://github.com/pymc-devs/pymc/blob/main/pymc/distributions/multivariate.py
 
     == Usage ===
-    >>> dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.]))
-    -1.386294361303224
+    >>> round(dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.])), 6)
+    -1.386294
     """
-    # Only apply to
-    # valid = a > 0
-    # counts = counts[valid]
-    # a = a[valid]
-    a = a + 1e-12      # TODO Find a better way to fix 0s in a (and still use broadcasting)
-
     n = counts.sum(axis=-1)
     sum_a = a.sum(axis=-1)
     const = (gammaln(n + 1) + gammaln(sum_a)) - gammaln(n + sum_a)
-    series = gammaln(counts + a) - (gammaln(counts + 1) + gammaln(a))
-    return const + series.sum(axis=-1)
+    series = np.where(a > 0, gammaln(counts + a) - (gammaln(counts + 1) + gammaln(a)), 0.)
+    return (const + series.sum(axis=-1)).astype(FLOAT_TYPE)
 
 
+@jit(nopython=True, fastmath=True, nogil=True)
 def dirichlet_categorical_logpdf(
     counts: NDArray[int],   # shape: (n_features, n_states)
     a: NDArray[float],      # shape: (n_features, n_states)
@@ -1355,16 +1367,14 @@ def dirichlet_categorical_logpdf(
         https://github.com/pymc-devs/pymc/blob/main/pymc/distributions/multivariate.py
 
     == Usage ===
-    >>> dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.]))
-    -1.386294361303224
+    >>> round(dirichlet_multinomial_logpdf(counts=np.array([2, 1, 0, 0]), a=np.array([1., 1., 0., 0.])), 6)
+    -1.386294
     """
-    a = a + 1e-12  # TODO Find a better way to fix 0s in a (and still use broadcasting)
-
     n = counts.sum(axis=-1)
     sum_a = a.sum(axis=-1)
     const = gammaln(sum_a) - gammaln(n + sum_a)
-    series = gammaln(counts + a) - gammaln(a)
-    return const + series.sum(axis=-1)
+    series = np.where(a > 0, gammaln(counts + a) - gammaln(a), 0.)
+    return (const + series.sum(axis=-1)).astype(FLOAT_TYPE)
 
 
 def get_along_axis(a: NDArray, index: int, axis: int):
@@ -1378,6 +1388,10 @@ def get_along_axis(a: NDArray, index: int, axis: int):
     return a[tuple(I)]
 
 
+def inner1d(x, y):
+    return np.einsum("...i,...i", x, y)
+
+
 def pmf_categorical_with_replacement(idxs: list[int], p: NDArray[float]):
     prob = 0
     for idxs_perm in map(list, permutations(idxs)):
@@ -1385,113 +1399,121 @@ def pmf_categorical_with_replacement(idxs: list[int], p: NDArray[float]):
     return prob
 
 
+def trunc_exp_rv(low, high, scale, size):
+    rnd_cdf = np.random.uniform(stats.expon.cdf(x=low, scale=scale),
+                                stats.expon.cdf(x=high, scale=scale),
+                                size=size)
+    return stats.expon.ppf(q=rnd_cdf, scale=scale)
+
+
+def warn_with_traceback(message, category, filename, lineno, file=None, line=None):
+    log = file if hasattr(file, 'write') else sys.stderr
+    # traceback.print_stack(file=log)
+    warning_trace = traceback.format_stack()
+    warning_trace_str = "".join(["\n\t|" + l for l in "".join(warning_trace).split("\n")])
+    message = str(message) + warning_trace_str
+    log.write(warnings.formatwarning(message, category, filename, lineno, line))
+
+
+def activate_verbose_warnings():
+    warnings.showwarning = warn_with_traceback
+
+
+def process_memory(pid: int = None, unit="B") -> int:
+    """Memory usage of the process with give `pid`,
+    or the current process if `pid` is None."""
+    mem_in_bytes = psutil.Process(pid).memory_info().rss
+    if unit == "B":
+        return mem_in_bytes
+    elif unit == "KB":
+        return mem_in_bytes >> 10
+    elif unit == "MB":
+        return mem_in_bytes >> 20
+    elif unit == "GB":
+        return mem_in_bytes >> 30
+    elif unit == "TB":
+        return mem_in_bytes >> 40
+    else:
+        raise ValueError(f"Unknown unit `{unit}`")
+
+
+def heat_binary_probability(p: float, temperature: float) -> float:
+    """Take the probability of a binary event to the power of (1/temperature)
+    and renormalize over a positive and negative outcome.
+
+    == Usage ===
+    >>> heat_binary_probability(0.5, 2)
+    0.5
+    >>> round(heat_binary_probability(1/3, 0.5), 6)
+    0.2
+    """
+    pow = 1 / temperature
+    p_pow = p ** pow
+    return p_pow / (p_pow + (1 - p)**pow)
+
 
 if __name__ == "__main__":
     import doctest
     doctest.testmod()
 
-    # @timeit('ms')
-    # def get_best_permutation_2(
-    #         areas: NDArray[bool],  # shape = (n_areas, n_sites)
-    #         prev_area_sum: NDArray[int],  # shape = (n_areas, n_sites)
-    # ) -> NDArray[int]:
-    #     """Return a permutation of areas that would align the areas in the new sample with previous ones."""
-    #     cluster_agreement_matrix = np.matmul(prev_area_sum, areas.T)
-    #     return linear_sum_assignment(cluster_agreement_matrix, maximize=True)[1]
+    # def sample_diri_mult_pdf(counts, a, S=10000):
+    #     n = np.sum(counts)
+    #     p = np.random.dirichlet(a, size=S)
+    #     # lh_per_observation_and_sample = (p @ t.T)
+    #     # lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
+    #     lh = stats.multinomial.pmf(x=counts, n=n, p=p)
+    #     return lh.mean()
     #
-    #     # def clustering_agreement(p):
-    #     #     """In how many sites does permutation `p` previous samples?"""
-    #     #     return cluster_agreement_matrix[:, p].trace()
-    #     #
-    #     # all_permutations = get_permutations(areas.shape[0])
-    #     # return max(all_permutations, key=clustering_agreement)
+    # def sample_diri_cat_pdf(t, a, S=10000):
+    #     print(S)
+    #     p = np.random.dirichlet(a, size=S)
+    #     lh_per_observation_and_sample = (p @ t.T)
+    #     lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
+    #     return lh_per_sample.mean()
     #
-    # areas = np.array([
-    #     [0, 1, 1, 0, 0, 0],
-    #     [1, 1, 0, 0, 0, 0],
-    #     [0, 0, 0, 1, 0, 0],
-    #     [1, 0, 0, 1, 0, 0],
-    #     [1, 0, 1, 0, 0, 0],
-    #     [1, 0, 1, 0, 1, 1],
-    #     [1, 0, 0, 0, 1, 0],
-    #     [0, 0, 0, 0, 1, 1],
-    # ])
+    # a = np.array([0.3, 0.9, 1.5, 0.0])
+    # t = np.array([
+    #     [1, 0, 0, 0],
+    #     [0, 1, 0, 0],
+    #     [0, 1, 0, 0],
+    #     [0, 0, 1, 0],
+    #     [0, 0, 1, 0],
+    # ], dtype=bool)
+    # k = t.sum(axis=0)
+    # p = normalize(a)
+    # counts = np.sum(t, axis=0)
     #
-    # prev_areas = np.array([
-    #     [0, 0, 0.5, 0.9, 0, 0],
-    #     [0.1, 0.6, 0.8, 0.2, 0, 0],
-    #     [0.9, 1, 0, 0.1, 0, 0],
-    #     [1, 0, 0, 1, 0, 0],
-    #     [1, 0, 1, 0, 0, 0],
-    #     [0, 0, 0, 0, .8, 1],
-    #     [1, 0, 1, 0, 1, 1],
-    #     [1, 0, 0, 0, 1, 0],
-    # ])
+    # # print(p[None, :][[0, 0, 0, 0, 0, 0]])
     #
-    # best1 = get_best_permutation(areas, prev_areas)
-    # best2 = get_best_permutation_2(areas, prev_areas)
-    # print(best1, best2)
-    # assert best1 == best2
-
-
-    def sample_diri_mult_pdf(counts, a, S=10000):
-        n = np.sum(counts)
-        p = np.random.dirichlet(a, size=S)
-        # lh_per_observation_and_sample = (p @ t.T)
-        # lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
-        lh = stats.multinomial.pmf(x=counts, n=n, p=p)
-        return lh.mean()
-
-    def sample_diri_cat_pdf(t, a, S=10000):
-        print(S)
-        p = np.random.dirichlet(a, size=S)
-        lh_per_observation_and_sample = (p @ t.T)
-        lh_per_sample = lh_per_observation_and_sample.prod(axis=-1)
-        return lh_per_sample.mean()
-
-    a = np.array([0.3, 0.9, 1.5, 0.0])
-    t = np.array([
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 1, 0],
-    ], dtype=bool)
-    k = t.sum(axis=0)
-    p = normalize(a)
-    counts = np.sum(t, axis=0)
-
-    # print(p[None, :][[0, 0, 0, 0, 0, 0]])
-
-    # s_values = np.array([2**(2*i) for i in range(2, 16)])
-    # s_values = np.arange(5_000, 1_000_000, 5_000)
-    s_values = np.arange(100, 2_000, 100)**2
-    pdf_sampled = [sample_diri_cat_pdf(t[:, :-1], a[:-1], S=S) for S in s_values]
-    print(pdf_sampled)
-
-    # pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
-    # pdf_exact = np.exp(dirichlet_multinomial_logpdf(counts, a))
-    pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
-    print(pdf_exact)
-    pdf_exact_2 = np.exp(dirichlet_categorical_logpdf(counts[:-1], a[:-1]))
-    print(pdf_exact_2)
-
-    import matplotlib.pyplot as plt
-    plt.scatter(s_values, pdf_sampled, s=10)
-    plt.axhline(pdf_exact, color='darkorange', zorder=2)
-    # plt.ylim(0.00286, 0.00289)
-    plt.show()
-    #
-    # exit()
-    # #################################################
-    #
-    # pdf_sampled = sample_diri_mult_pdf(k, a)
+    # # s_values = np.array([2**(2*i) for i in range(2, 16)])
+    # # s_values = np.arange(5_000, 1_000_000, 5_000)
+    # s_values = np.arange(100, 2_000, 100)**2
+    # pdf_sampled = [sample_diri_cat_pdf(t[:, :-1], a[:-1], S=S) for S in s_values]
     # print(pdf_sampled)
     #
-    # pdf_exact = dirichlet_multinomial_logpdf(k, a)
-    # print(np.exp(pdf_exact))
+    # # pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
+    # # pdf_exact = np.exp(dirichlet_multinomial_logpdf(counts, a))
+    # pdf_exact = np.exp(dirichlet_categorical_logpdf(counts, a))
+    # print(pdf_exact)
+    # pdf_exact_2 = np.exp(dirichlet_categorical_logpdf(counts[:-1], a[:-1]))
+    # print(pdf_exact_2)
     #
-    # import tensorflow_probability as tfp
-    # print(
-    #     tfp.distributions.DirichletMultinomial(4, a).prob(k)
-    # )
+    # import matplotlib.pyplot as plt
+    # plt.scatter(s_values, pdf_sampled, s=10)
+    # plt.axhline(pdf_exact, color='darkorange', zorder=2)
+    # # plt.ylim(0.00286, 0.00289)
+    # plt.show()
+    # #
+    # # exit()
+    # # #################################################
+    # #
+    # # pdf_sampled = sample_diri_mult_pdf(k, a)
+    # # print(pdf_sampled)
+    # #
+    # # pdf_exact = dirichlet_multinomial_logpdf(k, a)
+    # # print(np.exp(pdf_exact))
+    # #
+    # # import tensorflow_probability as tfp
+    # # print(
+    # #     tfp.distributions.DirichletMultinomial(4, a).prob(k)
+    # # )

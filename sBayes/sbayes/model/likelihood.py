@@ -2,10 +2,9 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
-from numpy.core._umath_tests import inner1d
-
 from sbayes.sampling.counts import recalculate_feature_counts
-from sbayes.util import dirichlet_categorical_logpdf, timeit
+from sbayes.util import dirichlet_categorical_logpdf
+from numba import njit
 
 try:
     from typing import Protocol
@@ -17,18 +16,7 @@ from numpy.typing import NDArray
 
 from sbayes.sampling.state import Sample
 from sbayes.load_data import Data
-
-
-class ModelShapes(Protocol):
-    n_clusters: int
-    n_sites: int
-    n_features: int
-    n_states: int
-    states_per_feature: NDArray[bool]
-    n_states_per_feature: list[int]
-    n_confounders: int
-    n_components: int
-    n_groups: dict[str, int]
+from sbayes.model.model_shapes import ModelShapes
 
 
 class Likelihood(object):
@@ -90,35 +78,21 @@ class Likelihood(object):
 
         return cache.value.sum()
 
-    # def generate_data(self, sample: Sample) -> NDArray[bool]:
-    #     data = np.zeros((sample.n_objects, sample.n_features, sample.n_states))
-    #
-    #     effects = self.generate_effects()
-    #     data_by_confounder = {}
-    #     for i_obj in range(sample.n_objects):
-    #         for i_feat in range(sample.n_features):
-    #             ...
-    #
-    # def generate_effects(self) -> NDArray[bool]:
-    #     # Generate cluster effect
-    #     cluster_effect = self.prior.prior_cluster_effect.generate
-    #
-    #     # Generate confounding effects
-    #     conf_effects = [
-    #
-    #     ]
-
-
     def compute_lh_confounder(self, sample: Sample, conf: str, caching=True) -> float:
         """Compute the log-likelihood of the observations that are assigned to confounder
         `conf` in the current sample."""
 
         cache = sample.cache.group_likelihoods[conf]
         feature_counts = sample.feature_counts[conf].value
+        conf_prior = self.prior.prior_confounding_effects[conf]
 
         with cache.edit() as lh:
-            prior_concentration = self.prior.prior_confounding_effects[conf].concentration_array(sample)
-            for i_g in cache.what_changed('counts', caching=caching):
+            prior_concentration = conf_prior.concentration_array(sample)
+
+            hyperprior_has_changed = conf_prior.any_dynamic_priors and cache.ahead_of('universal_counts')
+            changed_groups = cache.what_changed('counts', caching=caching and not hyperprior_has_changed)
+
+            for i_g in changed_groups:
                 lh[i_g] = dirichlet_categorical_logpdf(
                     counts=feature_counts[i_g],
                     a=prior_concentration[i_g],
@@ -127,38 +101,62 @@ class Likelihood(object):
         return cache.value.sum()
 
 
+@njit
 def compute_component_likelihood(
-    features: NDArray[bool],    # shape: (n_objects, n_features, n_states)
-    probs: NDArray[float],      # shape: (n_groups, n_features, n_states)
-    groups: NDArray[bool],      # shape: (n_groups, n_objects)
-    changed_groups: set[int],
-    out: NDArray[float]         # shape: (n_objects, n_features)
-) -> NDArray[float]:            # shape: (n_objects, n_features)
+    features: NDArray[bool],        # shape: (n_objects, n_features, n_states)
+    probs: NDArray[float],          # shape: (n_groups, n_features, n_states)
+    groups: NDArray[bool],          # shape: (n_groups, n_objects)
+    changed_groups: NDArray[int],   # shape: (n_changed_groups)
+    out: NDArray[float]             # shape: (n_objects, n_features)
+) -> NDArray[float]:                # shape: (n_objects, n_features)
+    """Compute the likelihood of each observation in `features` according to one mixture
+    components.
+    Args:
+        features: The feature observations in the dataset.
+        probs: The probabilities defining the categorical distribution of the mixture component.
+        groups: Boolean array assigning each object to a group in the mixture components.
+        changed_groups: Array of indices indicating which groups need to be recalculated.
+        out: The output array where the result will be stored.
+    """
+    # Assign likelihood 0 to objects that are in no group
+    no_group = (groups.sum(axis=0) == 0)
+    out[no_group, :] = 0.
 
-    # [NN] Idea: If the majority of groups is outdated, a full update (w/o caching) may be faster
-    # [NN] ...does not seem like it -> deactivate for now.
-    # if len(changed_groups) > 0.8 * groups.shape[0]:
-    #     return np.einsum('ijk,hjk,hi->ij', features, probs, groups, optimize=True)
-
-    out[~groups.any(axis=0), :] = 0.
+    # Recalculate the likelihood of groups that changed since last updating the cache
     for i in changed_groups:
         g = groups[i]
         f_g = features[g, :, :]
         p_g = probs[i, :, :]
-        out[g, :] = np.einsum('ijk,jk->ij', f_g, p_g)
-        assert np.allclose(out[g, :], np.sum(f_g * p_g[np.newaxis, ...], axis=-1))
-        assert np.allclose(out[g, :], inner1d(f_g, p_g[np.newaxis, ...]))
+        out[g, :] = np.sum(f_g * p_g[np.newaxis, ...], axis=-1)
+        # assert np.allclose(out[g, :], np.einsum('ijk,jk->ij', f_g, p_g))
 
     return out
 
 
-def update_weights(sample: Sample, caching=True) -> NDArray[float]:
-    """Compute the normalized weights of each component at each site.
+def compute_component_likelihood_exact(
+    features: NDArray[bool],        # shape: (n_objects, n_features, n_states)
+    probs: list[NDArray[float]],    # shape: (n_objects_in_g, n_features, n_states) for each group
+    groups: NDArray[bool],          # shape: (n_groups, n_objects)
+    changed_groups: NDArray[int],
+    out: NDArray[float]             # shape: (n_objects, n_features)
+) -> NDArray[float]:                # shape: (n_objects, n_features)
+    out[~groups.any(axis=0), :] = 0.
+    for i in changed_groups:
+        g = groups[i]
+        f_g = features[g, :, :]
+        p_g = probs[i]              # shape: (n_features, n_states)
+        out[g, :] = np.einsum('ijk,ijk->ij', f_g, p_g)
+        assert np.allclose(out[g, :], np.sum(f_g * p_g[np.newaxis, ...], axis=-1))
+    return out
+
+
+def update_weights(sample: Sample, caching: bool = True) -> NDArray[float]:
+    """Compute the normalized mixture weights of each component at each object.
     Args:
         sample: the current MCMC sample.
         caching: ignore cache if set to false.
     Returns:
-        np.array: normalized weights of each component at each site.
+        np.array: normalized weights of each component at each object.
             shape: (n_objects, n_features, 1 + n_confounders)
     """
     cache = sample.cache.weights_normalized
@@ -181,11 +179,21 @@ def normalize_weights(
     Return:
         the weight_per site
     """
-    # Broadcast weights to each site and mask with the has_components arrays
-    # Broadcasting:
-    #   `weights` does not know about sites -> add axis to broadcast to the sites-dimension of `has_component`
-    #   `has_components` does not know about features -> add axis to broadcast to the features-dimension of `weights`
-    weights_per_site = weights[np.newaxis, :, :] * has_components[:, np.newaxis, :]
+    # Find the unique patterns in `has_components` and remember the inverse mapping
+    pattern, pattern_inv = np.unique(has_components, axis=0, return_inverse=True)
 
-    # Re-normalize the weights, where weights were masked
-    return weights_per_site / weights_per_site.sum(axis=2, keepdims=True)
+    # Calculate the normalized weights per pattern
+    w_per_pattern = pattern[:, None, :] * weights[None, :, :]
+    w_per_pattern /= np.sum(w_per_pattern, axis=-1, keepdims=True)
+
+    # Broadcast the normalized weights per pattern to the objects where the patterns appeared using pattern_inv
+    return w_per_pattern[pattern_inv]
+
+    # # Broadcast weights to each site and mask with the has_components arrays
+    # # Broadcasting:
+    # #   `weights` does not know about sites -> add axis to broadcast to the sites-dimension of `has_component`
+    # #   `has_components` does not know about features -> add axis to broadcast to the features-dimension of `weights`
+    # weights_per_site = weights[np.newaxis, :, :] * has_components[:, np.newaxis, :]
+    #
+    # # Re-normalize the weights, where weights were masked
+    # return weights_per_site / weights_per_site.sum(axis=2, keepdims=True)
