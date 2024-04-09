@@ -33,6 +33,7 @@ dependencies = [
     "unidecode",
     "psutil",
     "numba",
+    "libpysal",
 ]
 
 [project.optional-dependencies]
@@ -55,4 +56,4 @@ sbayes = "sbayes.cli:cli"
 sbayesPlot = "sbayes.plot:cli"
 sbayesAlignClusters = "sbayes.tools.align_clusters:main"
 sbayesELPD = "sbayes.tools.elpd:cli"
-sbayesSubsample = "sbayes.tools.subsample:main"
+sbayesSubsample = "sbayes.tools.subsample:cli"

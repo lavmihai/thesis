@@ -1,11 +1,7 @@
 {
   "results": {
-    "path_in": {
-      "clusters": ["../../sbayes_results/2023-09-06_17-26/K1/clusters_K1_0.txt",
-    ""],
-      "stats": ["../../sbayes_results/2023-09-06_17-26/K1/stats_K1_0.txt"]
-    },
-    "path_out": "../../sbayes_plots"
+    "path_in": "../../sbayes_results/2024-03-29_11-27/",
+    "path_out": "../../sbayes_plots/2024-03-29_11-27/"
   },
 
   
@@ -49,26 +45,6 @@
       "format": "pdf",
       "resolution": 400,
       "n_columns": 5
-    }
-  },
-
-  
-  "preference_plot": {
-    "content": {
-      "features": [],
-      "preference": [],
-      "burn_in": 0.2
-    },
-    "graphic": {
-      "labels": true,
-      "title": true
-    },
-    "output": {
-      "width_subplot": 4,
-      "height_subplot": 4,
-      "format": "pdf",
-      "resolution": 400,
-      "n_columns": 3
     }
   }
 }
